@@ -329,6 +329,142 @@ GET /installation/  → 404   （安装目录未残留 ✅）
 
 ---
 
+---
+
+### 5.5 第二轮：业务系统只读核查新增发现（F-05 ~ F-09）
+
+> 时间：2026-09-21 23:47–23:56　|　会话：`BUTIAN-GY-PENDING-20260921-234655`
+> 方式：单线程人工 GET，请求间隔 ≥ 6s，**无扫描器、无并发、无爆破、无写操作**
+> 覆盖：`demo` / `icc` / `yun` / `open` / `v` / `bbs.ikuai8.com` 共 6 个官网公开链出资产
+
+#### 🟡 中危 F-05：`bbs.ikuai8.com` 人机验证可被客户端 Cookie 直接绕过（**confirmed ✅**）
+
+| 项 | 值 |
+|---|---|
+| 位置 | `https://bbs.ikuai8.com/`（人机验证层，保护 Discuz! X3.3 论坛） |
+| 类型 | 安全机制绕过 / CWE-602（服务端安全控制的客户端实现） |
+| 置信度 | **confirmed ✅**（实测响应体差异取证，非扫描器命中） |
+| CVSS 3.1 | **6.5（中危）** `AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L` |
+| CVSS 4.0 | **6.8（中危）** |
+
+**复现步骤**（2 条只读 GET，任何人可在 curl / 浏览器控制台完成）：
+
+```
+# 1) 不带 Cookie —— 被拦在验证页
+GET https://bbs.ikuai8.com/
+→ 200，2174 B，sha256 d5d495620d31…，正文含「正在验证您是否是真人」
+
+# 2) 手动带一个自己写的 Cookie —— 直接放行
+GET https://bbs.ikuai8.com/
+Cookie: human_verified=true
+→ 200，42600 B，sha256 b439b2fef3297632…
+   <title>iKuai爱快路由官方论坛 - Powered by Discuz!</title>
+```
+
+**根因**：验证页的"通过"动作完全由前端 JavaScript 完成，服务端不参与：
+
+```html
+<button onclick="verify()">我是人类</button>
+<script>
+function verify() {
+    document.cookie = "human_verified=true; path=/; max-age=604800";
+    location.reload();
+}
+</script>
+```
+
+按钮点击只是**用户自己在浏览器里写了一个 Cookie**，没有任何服务端签发、签名、挑战或时效校验。
+因此攻击者只需在请求头里带上同名 Cookie，即可获得 **7 天（max-age=604800）** 的无阻碍访问，
+且该 Cookie 无 `Secure` / `HttpOnly` / `SameSite` 属性。
+
+**影响分析**：
+
+1. 该验证层是论坛唯一的反自动化 / CC 防护。绕过后可无限制自动化访问
+   —— 批量抓取、灌水发帖、垃圾广告，均可绕过防护层直连 Discuz。
+2. **直接放大口令风险**：带 Cookie 访问
+   `https://bbs.ikuai8.com/member.php?mod=logging&action=login` 可正常拿到登录表单
+   （字段 `username` / `password` / `answer` / `formhash`），且页面**无验证码**（`seccode`、
+   `验证码`、`captcha` 出现次数均为 0）。
+   ⇒ **人机验证 + 验证码 + 失败锁定三层防护全部缺失**，登录接口具备被自动化爆破的条件。
+3. 直接影响：`I:L`（可批量写入垃圾内容）与 `A:L`（可被脚本持续消耗资源）；
+   间接影响：为弱口令/撞库铺平道路（对应截图的「弱口令」类型）。
+
+**⚠️ 本次未执行的部分**：未对登录接口发起任何口令尝试（详见 §6.4）。
+本报告只证明"防护缺失"这一事实，**未验证任何具体账号可被破解**。
+
+**修复建议**（P2）：把验证结果改为服务端签发 —— `verify()` 改为调用后端接口，
+由服务端生成带签名与短时效的 Cookie（建议 ≤ 10 分钟），并加 `Secure; HttpOnly; SameSite=Lax`；
+同时为登录接口开启 Discuz 自带验证码（`seccode`）与失败次数锁定。
+
+---
+
+#### 🔵 低危 F-06：明文 HTTP 在 4 个业务系统上均可达且不跳转 HTTPS
+
+| 资产 | `http://` 状态码 | 与 HTTPS 响应体是否一致 | HSTS |
+|---|---|---|---|
+| `demo.ikuai8.com` | 200 | **完全一致**（`f18792f66564…`） | ❌ **无** |
+| `open.ikuai8.com` | 200 | **完全一致**（`08b1a7d2aee2…`） | ✅ `max-age=31536000` |
+| `icc.ikuai8.com` | 200 | **完全一致**（`f7ec26e2a224…`） | ✅ `max-age=5184000` |
+| `bbs.ikuai8.com` | 200 | **完全一致**（`d5d495620d31…`） | 未观测到 |
+| `v.ikuai8.com` | 200 | 一致（仅页脚耗时注释不同） | 未观测到 |
+
+`open` / `icc` 虽然返回了 HSTS 头，但**在明文 HTTP 响应里也照常返回业务内容** ——
+首次明文访问不会被强制升级，HSTS 只在用户已用 HTTPS 访问过一次后才生效。
+`demo` 则完全没有 HSTS，属同一问题的完整形态。
+
+**影响**：与 F-01 同类；`demo` / `bbs` 无 Cookie，劫持危害低于官网 F-01，
+但 `open`（开放平台）与 `icc`（云管理后台）承载业务会话，风险更高。
+
+---
+
+#### ⚪ 信息级 F-07：`demo.ikuai8.com`（AList V3）公开 API 泄露服务器绝对路径
+
+```
+GET https://demo.ikuai8.com/api/public/settings
+→ 200，{"code":200,...,"version":"v3.63.0","allow_register":"false",
+        "sso_login_enabled":"false","logo":"https://bbs.ikuai8.com/static/image/common/logo1.png"}
+
+POST https://demo.ikuai8.com/api/fs/list  {"path":"/","password":"",...}
+→ 200，content[].path = "/mnt/jishuyunpan/AP"、"/mnt/jishuyunpan/OLT"、
+       "/mnt/jishuyunpan/历史固件"、"…/防火墙" … （共 12 个目录）
+```
+
+- **已排除**：版本为 **v3.63.0**，高于 CVE-2026-25161（AList < 3.57.0 路径遍历，CVSS 8.8）的
+  修复版本 **3.57.0**，**不受该漏洞影响**。该 CVE 还需认证会话且 PoC 为破坏性删除操作，本次未验证、也不应验证。
+- 目录内容为 AP / OLT / 交换机 / 路由 / 防火墙 / 升级文件 / 历史固件 / 产品素材 等，
+  属**官方公开技术云盘**，非内部数据泄露。
+- 仅泄露宿主绝对路径 `/mnt/jishuyunpan/`，危害有限，定信息级。
+- 该实例 7 个安全响应头**全部缺失**，且明文 HTTP 无 HSTS（见 F-06）。
+
+---
+
+#### ⚪ 信息级 F-08：`v.ikuai8.com` 页面底部泄露渲染调试信息
+
+```
+GET https://v.ikuai8.com/    →  …
+</html><!--17.44 ms , 12 query , 1335kb memory , 0 error-->
+GET http://v.ikuai8.com/     →  …
+</html><!--18.73 ms , 12 query , 1335kb memory , 0 error-->
+```
+
+页面尾部注释暴露渲染耗时、SQL 查询数、内存占用。本身不构成直接危害，
+但暴露了后端为 PHP 模板渲染且未关闭调试输出，可辅助攻击者做指纹与性能侧信道判断。
+
+---
+
+#### ⚪ 信息级 F-09：组件版本披露与 catch-all 配置残留
+
+| 资产 | 披露内容 |
+|---|---|
+| `bbs.ikuai8.com` | `<meta name="generator" content="Discuz! X3.3" />` —— **X3.3（2017）落后于 X3.4** |
+| `yun.ikuai8.com` | `/robots.txt` 返回的 sha256 与首页**完全相同**（`bba0003ddab2…`，53497 B）—— 全站 catch-all 软 404，任意不存在路径返回首页 |
+| `open.ikuai8.com` | 引用 `js/jquery-1.8.3.min.js`（2012 年版，存在已知 DOM-XSS CVE-2020-11022/11023，但需特定调用方式才可利用，本次未验证） |
+
+> Discuz! X3.3 与 jQuery 1.8.3 均属**版本老旧**，但"组件版本老旧"本身在补天通常不单独收录，
+> 除非能证明具体可利用。此处仅作线索记录，不作为提交项。
+
+---
+
 <a id="6"></a>
 ## 6. 弱口令专项说明（对应截图中的「漏洞类型：弱口令」）
 
@@ -372,6 +508,23 @@ GET /installation/  → 404   （安装目录未残留 ✅）
 5. **发现即停**：一旦登录成功，**立即停止**，不再做进一步横向或数据操作，仅截最小必要证明。
 6. **顺序**：`demo` → `open` → `icc` → `bbs` → `yun` → `v`，全程单线程只读核查，请求进审计链。
 
+### 6.4 第二轮实际结论：防护缺失已被证实，但未发起任何口令尝试
+
+对 6 个业务系统的只读核查已完成，弱口令相关的**前置事实**如下：
+
+| 资产 | 有登录入口 | 验证码 / 人机校验 | 判定 |
+|---|---|---|---|
+| `icc.ikuai8.com`（爱快云） | ✅ 有 | ✅ **阿里云验证码**（页面加载 `AliyunCaptcha.js`） | 弱口令不可行，防护到位 |
+| `bbs.ikuai8.com`（论坛） | ✅ 有（`member.php?mod=logging&action=login`） | ❌ **无验证码**，且人机验证可绕过（F-05） | **三层防护全缺，具备自动化爆破条件** |
+| `demo.ikuai8.com`（AList） | ✅ 有（`/@login`） | 未观测到；`allow_register=false`、SSO/LDAP 全关 | 待定（AList 初始口令为安装时随机生成，弱口令概率低） |
+| `open` / `yun` / `v.ikuai8.com` | 未发现独立登录入口 | — | 无口令面 |
+
+**⚠️ 截至本次报告，未对任何登录接口发起过一次口令提交。**
+已完成的是「防护机制存在性核查」（F-05 已证实 `bbs` 的人机验证可绕过、登录页无验证码、
+无失败锁定迹象），这是可独立提交的**安全机制缺陷**结论，不依赖是否真的爆破成功。
+
+是否进一步做「单账号 × ≤ 5 次常识性口令」的受控验证，属于需白帽本人拍板的动作，当前**挂起**。
+
 ---
 
 <a id="7"></a>
@@ -387,18 +540,23 @@ GET /installation/  → 404   （安装目录未残留 ✅）
 | 安全响应头 | ✅ 实测 |
 | TLS 协议版本 | ✅ 实测（1.0/1.1 已禁，协商 1.3） |
 | Joomla 默认配置残留 / catch-all 行为 | ✅ 实测 |
+| **6 个业务系统：首页 / robots.txt / 明文 HTTP 可达性** | ✅ 实测（第二轮） |
+| **`bbs` 人机验证绕过** | ✅ **实测复现**（无 Cookie 2174 B vs 带 Cookie 42600 B） |
+| **`bbs` 登录页验证码存在性** | ✅ 实测（`seccode` / `验证码` / `captcha` 出现次数均为 0） |
+| **`demo` AList 版本与 guest 列目录** | ✅ 实测（v3.63.0，已排除 CVE-2026-25161） |
 
 ### 7.2 本次**未**覆盖（不得据此推断不存在漏洞）
 
 | 未覆盖项 | 原因 |
 |---|---|
 | 目录/文件爆破、备份与敏感文件枚举 | 补天禁止自动化扫描；仅手工核查 2 条路径 |
-| 参数级注入（SQLi / XSS / 命令注入 / SSRF / SSTI） | 主站无动态参数入口；业务系统属下一轮（§6.3） |
-| 业务逻辑漏洞（越权、IDOR、流程跳过、金额篡改） | 主站无业务流程；相关系统在范围外 |
-| 鉴权与会话深度测试（会话固定、超时、登出失效） | 无登录入口 |
-| 文件上传下载点 | 相关子域在范围外 |
-| 第三方组件 CVE 利用 | 主站未暴露组件版本；主动探测属扫描器范畴 |
-| 子域接管、CNAME 劫持 | 子域均在范围外 |
+| 参数级注入（SQLi / XSS / 命令注入 / SSRF / SSTI） | 主站无动态参数入口；业务系统仅做首页级指纹，未构造 payload |
+| 业务逻辑漏洞（越权、IDOR、流程跳过、金额篡改） | 主站无业务流程；`icc` / `yun` 需真实账号，本次未注册、未登录 |
+| 鉴权与会话深度测试（会话固定、超时、登出失效） | 需有效会话，未获取 |
+| **任何口令/凭据尝试** | **未执行** —— 仅核查防护机制是否存在，见 §6.4 |
+| 文件上传下载点 | 未构造上传请求（属破坏性/写操作） |
+| 第三方组件 CVE 利用 | 仅做版本披露记录；主动利用属禁止范畴 |
+| 子域接管、CNAME 劫持 | 未做批量判定 |
 | OOB / 盲漏洞（blind SSRF、log4j 类） | 需回连外部服务，未执行 |
 | 高端口与非 Web 服务 | 端口扫描属禁止范畴，未执行 |
 | 企业内网域（`corp.*` / `internal.*`） | 明确范围外，未触碰 |
@@ -533,6 +691,73 @@ add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: htt
 > 3. Cookie 补齐 `Secure; SameSite=Lax`（Nginx 可用 `proxy_cookie_flags ~ Secure SameSite=Lax;`）；
 > 4. 建议同时补齐 `X-Frame-Options`、`X-Content-Type-Options`、`Referrer-Policy`、`Content-Security-Policy`。
 
+### 9.3 提交稿 B（**优先提交这一条** · F-05 人机验证绕过）
+
+> **标题**：爱快官方论坛 bbs.ikuai8.com 人机验证可被客户端 Cookie 直接绕过，登录接口无验证码可被自动化爆破
+>
+> **厂商**：全讯汇聚网络科技（北京）有限公司
+> **域名**：bbs.ikuai8.com
+> **漏洞类型**：安全机制绕过 / 访问控制缺陷（CWE-602）
+> **危害等级**：中危（CVSS 3.1 6.5 / CVSS 4.0 6.8）
+>
+> **漏洞URL**：`https://bbs.ikuai8.com/`
+>
+> **复现步骤**：
+> 1. 访问 `https://bbs.ikuai8.com/`，被拦截到人机验证页（响应 2174 字节，正文含"正在验证您是否是真人"）；
+> 2. 查看该页源码，"通过验证"的动作完全由前端 JS 完成：
+>    `document.cookie = "human_verified=true; path=/; max-age=604800"; location.reload();`
+>    —— 服务端不参与签发、不签名、无挑战、无时效校验；
+> 3. 在任意 HTTP 客户端手动带上该 Cookie 重新请求：
+>    `curl -H 'Cookie: human_verified=true' https://bbs.ikuai8.com/`
+>    → 返回 200、42600 字节、`<title>iKuai爱快路由官方论坛 - Powered by Discuz!</title>`，验证层被完全绕过；
+> 4. 带同一 Cookie 访问 `https://bbs.ikuai8.com/member.php?mod=logging&action=login`，
+>    可正常取得登录表单（字段 `username`/`password`/`answer`/`formhash`），
+>    页面中 `seccode`、`验证码`、`captcha` 出现次数**均为 0**，即登录接口无验证码。
+>
+> **归属证明**：（贴 bbs.ikuai8.com ICP 备案查询截图，主体须为「全讯汇聚网络科技（北京）有限公司」；
+> 辅助：该站 logo 引用 `https://bbs.ikuai8.com/static/image/common/logo1.png`，官网 `www.ikuai8.com` 首页公开链出该域名）
+> **首页截图**：（贴浏览器访问 https://bbs.ikuai8.com/ 且地址栏可见的完整截图）
+> **权重选择**：（按 bbs.ikuai8.com 在爱站 aizhan.com 的实际百度权重勾选）
+>
+> **证明**：
+> ```
+> # A) 无 Cookie —— 被拦
+> GET / HTTP/1.1
+> Host: bbs.ikuai8.com
+>
+> HTTP/1.1 200 OK   （2174 B）
+> <title></title>
+> <p>正在验证您是否是真人。这可能需要几秒钟时间，请点击按钮继续。</p>
+> <button onclick="verify()">我是人类</button>
+> <script>function verify(){document.cookie="human_verified=true; path=/; max-age=604800";location.reload();}</script>
+>
+> # B) 自建 Cookie —— 直接放行
+> GET / HTTP/1.1
+> Host: bbs.ikuai8.com
+> Cookie: human_verified=true
+>
+> HTTP/1.1 200 OK   （42600 B）
+> <title>iKuai爱快路由官方论坛 - Powered by Discuz!</title>
+> ```
+> 响应体 SHA-256（前 16 位）：`d5d495620d31…`（验证页） vs `b439b2fef3297632…`（论坛真实页）
+>
+> **危害分析**：该人机验证是论坛唯一的反自动化 / CC 防护层。由于验证状态完全由客户端写入、
+> 服务端不校验，攻击者只需一行请求头即可获得 7 天无阻碍访问，可批量抓取内容、灌水发帖、
+> 消耗服务资源；更关键的是登录接口同时缺失验证码与失败锁定，**三层防护全部失效**，
+> 使针对论坛账号的自动化口令爆破/撞库具备实施条件，可直接导致用户账号被批量控制。
+> 该 Cookie 亦无 `Secure`/`HttpOnly`/`SameSite` 属性。
+>
+> **修复建议**：
+> 1. 将验证改为服务端签发：`verify()` 调用后端接口，由服务端生成带 HMAC 签名、
+>    IP/UA 绑定、短时效（建议 ≤ 10 分钟）的 Cookie；
+> 2. 为 `member.php?mod=logging` 开启 Discuz 自带验证码（seccode）与失败次数锁定/阶梯延时；
+> 3. 验证 Cookie 补齐 `Secure; HttpOnly; SameSite=Lax`；
+> 4. 建议将 Discuz! X3.3 升级至 X3.4+ 并关闭 `robots.txt` 之外不必要的信息披露。
+
+> **收录性判断**：本条是**安全机制缺陷 + 可复现的绕过**，有明确请求/响应差异证据，
+> 比"配置加固建议"类更容易被收录。仍建议提交前在 `butian.net/Help/plan` 核对「验证码/人机验证绕过」
+> 是否在当前收录范围，并确认 bbs.ikuai8.com 的备案主体与厂商一致。
+
 ---
 
 <a id="10"></a>
@@ -546,8 +771,16 @@ add_header Content-Security-Policy "default-src 'self'; img-src 'self' data: htt
 | `pentest-orchestrator/recon_manual.json` | robots.txt、sitemap.xml、明文 HTTP 原始响应（含 SHA-256） |
 | `pentest-orchestrator/recon_confirm.json` | 首页 CMS 指纹、`/administrator/` 与 `/installation/` 判定结果 |
 | `pentest-orchestrator/recon_sitemap.json` | 421 条 URL 结构与动态入口统计 |
-| `pentest-orchestrator/auth.json` | 授权范围清单（含 40+ 条禁测条目） |
-| `.sessions/BUTIAN-GY-PENDING-20260921-222050.audit.log` | append-only 审计链，24 条 |
+| `pentest-orchestrator/auth.json` | 授权范围清单（in_scope 8 条 / out_of_scope 28 条） |
+| `pentest-orchestrator/manual_probe.py` | 第二轮只读指纹核查脚本（单线程 / 间隔 ≥6s / 上限 6 请求，纪律写死在代码里） |
+| `pentest-orchestrator/probe_demo_ikuai8_com.json` | demo：AList V3 指纹、明文 HTTP 同 sha、AList 版本与公开配置 |
+| `pentest-orchestrator/probe_open_ikuai8_com.json` | open：Tengine、jQuery 1.8.3、HSTS 有但明文仍 200 |
+| `pentest-orchestrator/probe_icc_ikuai8_com.json` | icc：爱快云 SPA、阿里云验证码、HSTS 有但明文仍 200 |
+| `pentest-orchestrator/probe_bbs_ikuai8_com.json` | bbs：Discuz! X3.3 指纹、明文 HTTP 同 sha |
+| `pentest-orchestrator/probe_yun_ikuai8_com.json` | yun：catch-all（/robots.txt 与首页同 sha） |
+| `pentest-orchestrator/probe_v_ikuai8_com.json` | v：视频教程站、页脚调试注释 |
+| `.sessions/BUTIAN-GY-PENDING-20260921-222050.audit.log` | 第一轮 append-only 审计链，24 条 |
+| `.sessions/BUTIAN-GY-PENDING-20260921-234655.audit.log` | 第二轮 append-only 审计链（业务系统核查） |
 
 ### 10.2 本次新增审计条目（11 条）
 
@@ -563,6 +796,26 @@ MANUAL-PROBE   GET /installation/  → 404
 TLS-CHECK      TLS1.3 协商，TLS1.0/1.1 已拒绝
 SCOPE-GUARD    corp.*/internal.* 主机名已标记禁测，未做任何访问
 COMPLIANCE     未执行扫描器/并发/爆破/破坏性Payload/DoS/数据导出
+```
+
+### 10.2b 第二轮审计条目（业务系统只读核查，2026-09-21 23:47–23:56）
+
+```
+INIT           target=demo.ikuai8.com  scope=8 项 in_scope  rate=conservative  manifest=yes
+MANUAL-PROBE   GET https://demo.ikuai8.com/            → 200 4295B   Caddy / AList V3
+MANUAL-PROBE   GET https://demo.ikuai8.com/robots.txt  → 200 22B
+MANUAL-PROBE   GET http://demo.ikuai8.com/             → 200 与 HTTPS 同 sha256（明文可达、无 HSTS）
+MANUAL-PROBE   GET /api/public/settings                → 200 version=v3.63.0 allow_register=false
+MANUAL-PROBE   GET /@login                             → 200 与首页同 sha256（SPA）
+MANUAL-PROBE   GET https://open.ikuai8.com/            → 200 Tengine / jQuery 1.8.3 / HSTS 有
+MANUAL-PROBE   GET https://icc.ikuai8.com/             → 200 爱快云 SPA / 阿里云验证码 / HSTS 有
+MANUAL-PROBE   GET https://bbs.ikuai8.com/             → 200 2174B 人机验证页（Discuz! X3.3）
+MANUAL-PROBE   GET https://bbs.ikuai8.com/ Cookie: human_verified=true → 200 42600B 论坛真实页（验证绕过）
+MANUAL-PROBE   GET /member.php?mod=logging&action=login → 200 登录表单，seccode/captcha 计数 0
+MANUAL-PROBE   GET https://bbs.ikuai8.com/forum.php    → 200 generator=Discuz! X3.3
+MANUAL-PROBE   GET https://yun.ikuai8.com/robots.txt   → 200 与首页同 sha256（catch-all 软404）
+MANUAL-PROBE   GET https://v.ikuai8.com/               → 200 页脚泄露渲染调试注释
+COMPLIANCE     第二轮全程单线程 GET、间隔 ≥6s、无扫描器、无爆破、未提交任何凭据
 ```
 
 ### 10.3 提交前必办事项
