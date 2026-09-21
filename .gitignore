@@ -1,0 +1,22 @@
+# 工具二进制与模板库（数百 MB，不入版本库；由 install_tools.py 重建）
+pentest-orchestrator/tools/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 会话与审计产物（含真实授权信息，不入库）
+pentest-orchestrator/.sessions/
+
+# 靶场临时文件
+pentest-orchestrator/_lab/
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地备份
+*.real.bak
+*.bak
