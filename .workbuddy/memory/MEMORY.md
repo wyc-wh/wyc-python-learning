@@ -199,3 +199,28 @@
 - git.exe 不在 PATH：`export PATH="/c/Users/wd/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd:$PATH"`
 - `git ls-files` 把非 ASCII 路径转义成八进制，比对前要 `git ls-files -z` + escape_decode
 - 个别中文名文件会报 `ENOSYS/Function not implemented`（环境怪癖），用 `--ignore-errors` 跳过
+
+## 补天公益SRC 规则（2026-09-21 用户纠正，务必遵守）
+
+- **公益SRC 不需要核备案，也不需要事先报备** —— 此前要求"逐个核 ICP 备案主体 + 站内信报备
+  获批"是**过度解读**，已全面移除。依据：官方"报备"条款只针对「核心功能篡改、批量数据操作」
+  等影响业务连续性/用户数据安全/系统稳定性的测试；该条与"授权前提"并列，约束的是**专属SRC/众测**。
+  公益SRC =「随机发现 → 提交 → 平台审核 → 企业认领」，无事前审批入口。
+- ICP 备案仅用于**提交时**官方模板第 2 项「归属证明」；开测前不用核。
+- 范围判据 = **官网首页公开链出** + 版权/主体一致（不是项目页白名单，公益SRC 没有白名单）。
+- 仍有效红线：禁自动化扫描器、禁高并发、禁破坏性、禁用户数据、禁范围外、禁未授权横向。
+
+## 手工只读核查套路（manual_probe.py，可复用）
+
+`pentest-orchestrator/manual_probe.py --host <h> --session <id> --paths /,/robots.txt --check-http`
+纪律写死在代码里：仅 GET / 间隔 ≥6s / 单轮 ≤6 请求 / 证据 JSON + 审计链。
+
+**高价值手法**：
+1. **抓首页 href 找业务系统** —— 实测比 crt.sh 更有效（crt.sh 226 条完全漏掉 6 个官网链出子域）
+2. **软404 判定**：`robots.txt` 返回 sha256 与首页相同 = catch-all，别被 200 骗
+3. **客户端安全控制绕过**：看见"正在验证您是否是真人"就去看 JS —— 若 `document.cookie=...`
+   + reload，服务端不校验 → **一个 curl 头就能绕过**（bbs.ikuai8.com 实测成立，中危）
+4. **版本披露排除法**：拿到版本先查修复版本再决定是否报告（AList v3.63.0 > 3.57.0
+   → 直接排除 CVE-2026-25161，别硬套 CVE）
+5. **验证码存在性 = 弱口令可行性判据**：页面搜 seccode/验证码/captcha/AliyunCaptcha.js，
+   全 0 才说明可爆破；有验证码就别碰（icc 有阿里云验证码 → 判定不可行）
