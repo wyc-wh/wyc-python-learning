@@ -180,3 +180,22 @@
 5. **项目当前不是 git 仓库**（无 `.git`），git.exe 在
    `C:/Users/wd/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe`（不在 PATH）
    → 改代码前记得先自己留副本，别指望 git 回滚
+
+### 环境隔离约定（已落地，后续测试必须遵守）
+- `orchestrator.py` 支持 **`PENTEST_AUTH`** / **`PENTEST_SESSIONS`** 环境变量覆盖
+- 测试一律 `tempfile.mkdtemp()` + `env=` 传给 subprocess，**不碰真实 auth.json / .sessions**
+- 测试末尾自检「真实文件 mtime 未变」
+
+### 归属核实的高效入手点（2026-09-21 验证有效）
+1. **首页页脚** = 归属证明金矿：ICP备案号 / 主体全称 / 地址 / 版权 / beian 链接一次拿全，
+   正好对应补天提交模板第 2 项
+2. **抓首页所有 href 的 host** = 找出官网公开链出的业务系统。
+   实测比 crt.sh 更有效：crt.sh 完全没覆盖到 `demo/icc/yun/open/v.ikuai8.com` 这几个
+3. 优先找 **`demo.*` 演示环境** —— 官方明示可访问，测它业务影响风险最低，
+   是弱口令/默认口令测试的首选目标
+
+### git 相关
+- 仓库已建（2026-09-21），`.gitignore` 排除 tools/（数百MB）、.sessions/、_lab/
+- git.exe 不在 PATH：`export PATH="/c/Users/wd/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd:$PATH"`
+- `git ls-files` 把非 ASCII 路径转义成八进制，比对前要 `git ls-files -z` + escape_decode
+- 个别中文名文件会报 `ENOSYS/Function not implemented`（环境怪癖），用 `--ignore-errors` 跳过
