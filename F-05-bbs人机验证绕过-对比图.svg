@@ -1,0 +1,45 @@
+<svg viewBox="0 0 680 368" width="680" height="368" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>bbs.ikuai8.com 人机验证绕过对比</title>
+<desc>不带 Cookie 被拦在验证页返回 2174 字节；手动带 Cookie human_verified=true 后返回 42600 字节的真实论坛页，验证被绕过。</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<rect x="0" y="0" width="680" height="368" fill="#FFFFFF"/>
+
+<text x="40" y="48" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F5E5A">① 正常请求 · 无 Cookie</text>
+<text x="350" y="48" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F5E5A">② 重放请求 · 自建 Cookie</text>
+
+<rect x="40" y="60" width="290" height="56" rx="8" fill="#F1EFE8" stroke="#D3D1C7" stroke-width="0.5"/>
+<text x="185" y="78" font-family="Consolas, Menlo, monospace" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">GET / HTTP/1.1</text>
+<text x="185" y="96" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">Host: bbs.ikuai8.com</text>
+
+<rect x="350" y="60" width="290" height="56" rx="8" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="495" y="78" font-family="Consolas, Menlo, monospace" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">GET / HTTP/1.1</text>
+<text x="495" y="96" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">Cookie: human_verified=true</text>
+
+<path d="M185 116 L185 146" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<path d="M495 116 L495 146" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+<rect x="40" y="152" width="290" height="72" rx="8" fill="#F1EFE8" stroke="#D3D1C7" stroke-width="0.5"/>
+<text x="185" y="170" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" text-anchor="middle" dominant-baseline="central">200 · 2174 B</text>
+<text x="185" y="188" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F5E5A" text-anchor="middle" dominant-baseline="central">正在验证您是否是真人</text>
+<text x="185" y="204" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#888780" text-anchor="middle" dominant-baseline="central">sha256 d5d495620d31…</text>
+
+<rect x="350" y="152" width="290" height="72" rx="8" fill="#FCEBEB" stroke="#A32D2D" stroke-width="0.5"/>
+<text x="495" y="170" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="500" fill="#791F1F" text-anchor="middle" dominant-baseline="central">200 · 42600 B</text>
+<text x="495" y="188" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#791F1F" text-anchor="middle" dominant-baseline="central">iKuai爱快路由官方论坛</text>
+<text x="495" y="204" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#A32D2D" text-anchor="middle" dominant-baseline="central">sha256 b439b2fef3297632…</text>
+
+<text x="185" y="240" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F5E5A" text-anchor="middle">被拦截 · 防御生效</text>
+<text x="495" y="240" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="500" fill="#A32D2D" text-anchor="middle">验证绕过 · 直达论坛</text>
+
+<path d="M40 260 L640 260" fill="none" stroke="#D3D1C7" stroke-width="0.5"/>
+
+<rect x="40" y="272" width="600" height="76" rx="12" fill="#F1EFE8" stroke="#B4B2A9" stroke-width="0.5"/>
+<text x="56" y="292" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="14" font-weight="500" fill="#2C2C2A" dominant-baseline="central">根因：验证状态由客户端写入，服务端不校验</text>
+<text x="56" y="314" font-family="Consolas, Menlo, monospace" font-size="12" font-weight="400" fill="#5F5E5A" dominant-baseline="central">document.cookie = "human_verified=true; path=/; max-age=604800";</text>
+<text x="56" y="334" font-family="-apple-system, 'Segoe UI', 'Microsoft YaHei', sans-serif" font-size="12" font-weight="400" fill="#5F5E5A" dominant-baseline="central">location.reload(); → 绕过后登录页无验证码、无失败锁定，可自动化爆破</text>
+</svg>
