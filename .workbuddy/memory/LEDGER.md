@@ -35,4 +35,8 @@ service_version / p1 / closure / fp）
 
 1. 提交回执闭环（比挖新洞更重要）
 2. ikuai8 的 `demo.` / `icc.` 登录态验证
-3. XBEN 外部基准（只读方法学下分数会极低，但这本身把「合规代价」量化出来）
+3. **Web 界面接入只读规则引擎**：`webui.py` 仍是 v0.5 基线版，
+   无 `/api/check` → R001~R014 / lint / coverage / fp_review / credentials
+   在 Web 端完全不可用（只能走 CLI）。2026-09-23 已修其 scan 分支的
+   `payload` 未定义必崩点，但「前端与能力脱节」本身未解决
+4. XBEN 外部基准（只读方法学下分数会极低，但这本身把「合规代价」量化出来）
