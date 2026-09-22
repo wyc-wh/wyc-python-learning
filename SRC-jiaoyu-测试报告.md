@@ -161,6 +161,11 @@
 > 跳转由**服务端返回**，未缓存 HSTS 的客户端发出的第一次明文请求本身已走明文链路，
 > 中间人可在跳转发生前截获该请求；而缺 `Secure` 的 `laravel_session` 已随请求发出。
 > **提交稿中不得再写「明文返回完整页面不跳转」，否则厂商一验即驳。**
+>
+> **⚠️ 同日第二处更正**：原写该 Cookie 带 `SameSite=None`，并据此加了
+> 「Chrome 80+ 会拒绝它」的附注。**实测不存在任何 `SameSite` 属性**（见步骤 3）。
+> 该附注意味着「Cookie 反而写不进去」，属自我削弱，已删除。
+> 更正后事实更有利：默认 `Lax` 下跨站顶级导航仍会携带该 Cookie。
 
 
 #### 漏洞位置
@@ -195,7 +200,7 @@ Strict-Transport-Security: value          ← ❌ 字面量占位符
 Referrer-Policy: value                    ← ❌ 字面量占位符
 X-Permitted-Cross-Domain-Policies: value  ← ❌ 字面量占位符
 X-Download-Options: value                 ← ❌ 字面量占位符
-Set-Cookie: laravel_session=...; HttpOnly; SameSite=None   ← ❌ 缺 Secure
+Set-Cookie: laravel_session=...; expires=...; Max-Age=7200; path=/; httponly   ← ❌ 缺 Secure、缺 SameSite
 ```
 
 **这不是解析误差** —— 已排除探测脚本脱敏的可能（`manual_probe.py` 中无任何
@@ -210,26 +215,58 @@ Set-Cookie: laravel_session=...; HttpOnly; SameSite=None   ← ❌ 缺 Secure
 | `X-Download-Options` | `noopen` | **无效**，IE 下载文件可直接打开 |
 | `X-Permitted-Cross-Domain-Policies` | `none` | **无效**，Adobe 跨域策略不限制 |
 
-**步骤 2 —— 明文 HTTP 可达（实测 301 跳转，但跳转由服务端返回，中间人可在跳转前截获）**
+**步骤 2 —— 明文 HTTP 可达（实测 301 跳转；跳转由服务端返回，跳转前的明文请求已暴露）**
 
 ```bash
-curl -sI http://qmt.jiaoyu.cn/
+curl -s -D - -o nul http://qmt.jiaoyu.cn/     # 关键：不跟随跳转
 ```
 
-```
-HTTP/1.1 200 OK
-Strict-Transport-Security: value     ← 无效 HSTS，浏览器不会升级到 HTTPS
-（无 Location 跳转头）
-（返回完整 1237B 页面正文，标题「无权限页面」）
-```
-
-**步骤 3 —— 会话 Cookie 缺 `Secure` 且 `SameSite=None`**
+一手实测响应（`manual_probe.py`，`follow_redirect=False`，2026-09-22 12:32）：
 
 ```
-Set-Cookie: laravel_session=<value>; path=/; HttpOnly; SameSite=None
+HTTP/1.1 301 Moved Permanently
+Server: ZS-Proxy21/v201
+Date: Tue, 22 Sep 2026 04:32:31 GMT
+Content-Type: text/html
+Transfer-Encoding: chunked
+Connection: close
+Location: https://qmt.jiaoyu.cn/
 ```
 
-`Secure=False` → 该 Cookie **会随明文 HTTP 请求发送**，在步骤 2 成立的前提下可被中间人直接截获。
+> ⚠️ **取证陷阱**：凡会跟随 30x 的客户端（浏览器、`urllib`、不加 `-D -` 直读的 curl）
+> 看到的都是跳转后 HTTPS 落地页的 `HTTP/1.1 200 OK`，从而把本条误判成
+> 「明文 HTTP 直出完整页面」。判断跳转行为**必须禁用跟随**，否则一验即驳。
+
+三点事实定性：
+
+1. 明文 HTTP **不返回任何页面正文**（响应体 0 字节，仅 301）—— 这是对站点有利的一面，必须如实写明；
+2. 但 **301 是服务端在收到明文请求之后才返回的** —— 那一次请求已经走完明文链路，
+   且按步骤 3 的属性，**携带了 `laravel_session`**；
+3. HSTS 为无效占位符 → 浏览器**永不缓存** HSTS → 每次经 `http://` 链接访问都会先发一次明文请求，
+   不存在「只有首次才有风险」的窗口期。
+
+**步骤 3 —— 会话 Cookie 缺 `Secure`，且未声明 `SameSite`**
+
+原始头（Cookie 值已脱敏）：
+
+```
+Set-Cookie: laravel_session=<值已脱敏>; expires=Tue, 22-Sep-2026 06:32:25 GMT; Max-Age=7200; path=/; httponly
+```
+
+实测属性（由 `manual_probe.py` 解析，非人工判读）：
+
+| 属性 | 实测值 | 后果 |
+|---|---|---|
+| `Secure` | **缺失** ❌ | 该 Cookie **会随明文 HTTP 请求发送** → 步骤 2 成立时可直接被中间人读取 |
+| `HttpOnly` | 已设置 ✅ | 可防 XSS 读取（与本条无关，但该项配置正确，如实记录） |
+| `SameSite` | **未声明** ❌ | 浏览器按默认 `Lax` 处理 → **跨站顶级 GET 导航仍会携带**该 Cookie |
+| `Max-Age` | 7200（2 小时） | — |
+
+> ⚠️ **2026-09-22 二次更正**：本报告此前误写该 Cookie 带 `SameSite=None`，
+> 并据此附注「Chrome 80+ 会拒绝 `SameSite=None` 缺 `Secure` 的 Cookie」。
+> 复核全部 jiaoyu 资产的 `Set-Cookie`，**不存在任何 `SameSite` 属性**。
+> 更正后的事实对**攻击方更有利**：默认 `Lax` 下跨站顶级导航会携带该 Cookie；
+> 而真正的 `SameSite=None` + 缺 `Secure` 反而会被 Chrome 直接丢弃（那条附注是在自我削弱，已删）。
 
 #### 危害等级评估依据
 
@@ -287,8 +324,9 @@ server {
 'http_only' => true,
 ```
 
-> ⚠️ 注意：Chrome 80+ 会**拒绝** `SameSite=None` 但缺 `Secure` 的 Cookie。
-> 当前配置下该 Cookie 在现代浏览器可能根本无法写入 —— 既是安全问题，也是功能隐患。
+> ℹ️ **配置提示**：当前 `laravel_session` **未声明** `SameSite`，浏览器按默认 `Lax` 处理。
+> 后续若补 `same_site` 配置，注意 `SameSite=None` 必须**同时**带 `Secure`，
+> 否则 Chrome 80+ 会直接丢弃该 Cookie（那是另一种故障，与本条漏洞无关）。
 
 ---
 
@@ -306,12 +344,15 @@ server {
 
 **会话 Cookie 属性汇总**（均为 `Secure=False`）：
 
-| 站点 | Cookie 名 | HttpOnly | SameSite |
-|---|---|---|---|
-| `qmt.jiaoyu.cn` | `laravel_session` | ✅ | `None` ❌ |
-| `bk.jiaoyu.cn` | `jiaoyu_session` | ✅ | `None` ❌ |
-| `rmt.jiaoyu.cn` / `www.jiaoyu.cn` | `cookiesession1` | ✅ | 未设置 |
-| `qmt` / `rmt` | `XSRF-TOKEN` | — | — |
+| 站点 | Cookie 名 | HttpOnly | Secure | SameSite |
+|---|---|---|---|---|
+| `qmt.jiaoyu.cn` | `laravel_session` | ✅ | ❌ **缺失** | ❌ **未声明**（浏览器默认 Lax） |
+| `bk.jiaoyu.cn` | `jiaoyu_session` | ✅ | ❌ **缺失** | ❌ **未声明** |
+| `rmt.jiaoyu.cn` / `www.jiaoyu.cn` | `cookiesession1` | ✅ | ❌ **缺失** | ❌ **未声明** |
+| `qmt` / `rmt` | `XSRF-TOKEN` | — | ❌ **缺失** | ❌ **未声明** |
+
+> ⚠️ 全站 `Set-Cookie` 均**未出现 `SameSite` 属性**。此前表中记为 `None` 系误判
+> （把「属性缺失」当成「值为 None」），2026-09-22 已更正。
 
 **修复**：按 §4.1 的三项措施统一加固。
 
@@ -499,7 +540,7 @@ X-Permitted-Cross-Domain-Policies、X-Download-Options 四项的值被配置为
 字面量字符串 "value"（模板占位符未替换），浏览器按无效指令忽略，
 导致 HSTS 等防护全部失效。同时：
  1. 明文 HTTP（http://qmt.jiaoyu.cn/）实测返回 **301 跳转** HTTPS —— 但跳转由服务端返回，未缓存 HSTS 的客户端的首次明文请求已暴露（2026-09-22 更正）；
- 2. 会话 Cookie laravel_session 未设置 Secure 属性，且 SameSite=None。
+  2. 会话 Cookie laravel_session 未设置 Secure 属性，且未声明 SameSite。
 三者叠加，攻击者处于中间人位置时可直接截获会话凭据。
 
 【复现步骤】
@@ -509,16 +550,33 @@ X-Permitted-Cross-Domain-Policies、X-Download-Options 四项的值被配置为
      Referrer-Policy: value
      X-Permitted-Cross-Domain-Policies: value
      X-Download-Options: value
-   以及 Set-Cookie: laravel_session=...; HttpOnly; SameSite=None（无 Secure）
-2. curl -sI http://qmt.jiaoyu.cn/
-   观察到 HTTP 200、无 Location 跳转、HSTS 仍为无效的 "value"
-3. 综合：HSTS 失效 + 明文可达（跳转前可截获）+ Cookie 无 Secure = 会话可被中间人截获
+   以及 Set-Cookie: laravel_session=...; expires=...; Max-Age=7200; path=/; httponly
+   —— 注意其中没有 Secure，也没有 SameSite。
+
+2. curl -s -D - -o nul http://qmt.jiaoyu.cn/     （请勿跟随跳转）
+   观察到 HTTP/1.1 301 Moved Permanently，Location: https://qmt.jiaoyu.cn/
+   说明：站点确实做了 HTTPS 跳转，明文 HTTP 不返回任何页面正文；
+   但 301 是服务端收到明文请求之后才返回的，该请求本身已走明文链路并携带
+   上述缺 Secure 的 laravel_session，中间人可在跳转发生前完成截获。
+   （若用会跟随 30x 的客户端，看到的是跳转后 HTTPS 落地页的 200，
+     与"明文是否跳转"无关，请勿据此否定本条。）
+
+3. 综合：
+   HSTS 值为无效占位符 "value" → 浏览器永不缓存 HSTS，不会主动升级 HTTPS；
+   + 明文 HTTP 可达（跳转前的请求已暴露）
+   + 会话 Cookie 无 Secure、无 SameSite（默认 Lax，跨站顶级导航仍携带）
+   = 会话凭据可被中间人截获。
 
 【影响分析】
-laravel_session 为后台管理系统会话凭据。攻击者在公共网络、企业内网或
-链路中间位置，可诱导受害者以 HTTP 访问该域名，截获会话 Cookie 后
-接管后台会话。另需注意：Chrome 80+ 会拒绝 SameSite=None 但缺 Secure 的
-Cookie，当前配置亦存在 Cookie 无法写入的功能性隐患。
+laravel_session 为该系统（Laravel）的会话 Cookie，登录后即承载用户身份。
+攻击者在公共 WiFi、企业内网或链路中间位置，诱导受害者经 http:// 链接访问该域名
+（邮件、旧书签、第三方页面引用等均可），即可在 301 跳转发生前截获会话 Cookie
+并接管其会话。由于 HSTS 失效，受害者不存在"仅首次访问有风险"的保护窗口。
+
+【论证边界（如实声明）】
+本次测试未取得该系统的登录账号，未能实测"已登录态"下 Cookie 的实际承载内容；
+上述 C:H/I:H 评级以"受害者已登录"为前提，依据 Laravel 会话 Cookie 的通用机制推定。
+若厂商能提供测试账号，可进一步完成端到端验证。
 
 【修复建议】
 1. 修正占位符配置：
@@ -539,8 +597,9 @@ Cookie，当前配置亦存在 Cookie 无法写入的功能性隐患。
 但本条的特点是：
 
 - ✅ 有**可复现的原始响应头证据**（占位符 `value`，非常规的"缺失"）
-- ✅ 构成**完整利用链**（HSTS 失效 + 明文可达 + Cookie 缺 Secure）而非单点建议（明文形态为 301 跳转，非 200 直出 —— 口径见 J-01 更正说明）
-- ✅ 附带一个**功能性隐患**（Cookie 可能被浏览器拒绝写入）
+- ✅ 构成**完整利用链**（HSTS 失效 + 明文可达 + Cookie 缺 Secure）而非单点加固建议
+- ⚠️ 明文形态为 **301 跳转、不返回正文** —— 这是必须如实写明的减分项，
+  论证只能落在「跳转前的明文请求已暴露」上，**绝不可写成"明文返回完整页面"**
 
 > **提交前建议**：先去 `butian.net/Help/plan` 核对「安全配置错误 / 传输层保护不足」
 > 是否在当期收录范围。若不在，可考虑改为提交 J-03（框架信息泄露）—— 但后者等级更低。
