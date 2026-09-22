@@ -160,3 +160,40 @@
 - **结论文本与修复建议必须分开检查**：`remediation` 里的「应设为 SameSite=None」
   是建议值，计入会被当成「声称现状」→ 误报
 - **合规闸统一 rc=2 + stderr**：`sys.exit("字符串")` 是 rc=1，门禁脚本会漏判
+
+## 十四、框架指纹知识库（P2，2026-09-22 落地）
+
+`rules/data/stacks.json`（14 栈）+ `rules/R009_stack_fingerprint.py` +
+`_test_stack_lab.py`（20/20）。ORDER 追加 R009（在 R008 之后、R007 之前）。
+
+**要解决的问题**：R001~R008 全是通用配置检查，命中率有天花板 ——
+缺「这站是什么栈、该栈高发什么」。P2 把它补上：指纹 → 栈 → 定向检查清单。
+
+### 三条硬边界（复用时别拆）
+1. **指纹识别 0 额外请求** —— 复用 R006 首页基线 + R002 绕过后的页面缓存
+2. **定向探针默认不跑** —— 仅 `--deep` 时于预算内执行，每栈 ≤4，全 GET 非触发
+3. **`_never_probe` 永不自动请求** —— ThinkPHP invokefunction 触发点 /
+   SpringBoot `/actuator/heapdump` / Jenkins `/script`（Groovy 控制台）。
+   测试直接断言「heapdump 从未出现在请求流水」，不靠自觉
+
+### 刻意不做
+**不写 CVE 编号**：只给官方公告入口（advisory_hub）+ 风险类型，
+命中后 `needs_manual_check=True`。臆造 CVE 是本项目明令禁止的。
+
+### 实现要点
+- 指纹可靠度 high/medium/low，**low 不单独采信**（正文出现框架名误报率高）
+- **同栈多命中取可靠度最高，不是取第一条** —— 曾写 `break` 取第一条，
+  导致把 qmt 的 `XSRF-TOKEN`(medium) 当成首选而漏掉 `laravel_session`(high)
+- 探针结果必过 catch-all 比对；证据只留命中片段 + sha256，**绝不落正文**
+
+### 实战
+- `bbs.ikuai8.com` → Discuz!（body 页脚，high）
+- `qmt.jiaoyu.cn` → Laravel（cookie XSRF-TOKEN，medium）
+
+⚠️ **Discuz 只在带 R002 绕过时才命中** —— 首页是拦截页，版本在绕过后的页面里。
+与 §六 R005 的教训同源，第三次印证：**编排顺序本身就是检测能力的一部分**。
+
+### 靶场踩坑
+忘了 `verify_tls=False`（自签证书）→ HTTPS 全失败，但表现为「指纹未命中」
+而非「请求失败」（rec 非 None 而 text 为空）。
+**判别指纹：requests 里 `status=None / bytes=0` = TLS 或连接问题，不是规则问题。**
