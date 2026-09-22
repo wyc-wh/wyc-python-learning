@@ -373,6 +373,64 @@ POSIX `rm` 被 shim 包了一层 safe-delete，同样受 ② 影响 → 删文�
 - 合规闸统一 **rc=2 + stderr**（`sys.exit(str)` 是 rc=1）；`git ls-files` 非 ASCII
   转八进制 → `-z` + escape_decode；中文名 ENOSYS → `--ignore-errors`
 
-## 十五、提交记录
+## 十五、Web 控制台（webui.py）
+
+`python webui.py --host 127.0.0.1 --port 8899`，零依赖（标准库 `http.server`）。
+**2026-09-23 之前是 v0.5 基线**：只有 init / plan / autorun(recon,scan) / report /
+audit / tools / engage —— 只读规则引擎、lint、coverage 在界面上**完全不可用**，
+「平台前端」与「平台能力」是两张皮。本次接入为 ② 卡片「只读规则引擎」。
+
+### 接入时必须处理的三个陷阱
+
+1. **SystemExit 会静默杀死请求线程**（最关键）
+   `run_check()` 与合规闸用 `sys.exit(2)` 表达拒绝，而 `SystemExit` 继承
+   `BaseException` —— `socketserver.process_request_thread` 只捕 `Exception`，
+   异常逃逸到 `threading.excepthook`：**请求线程静默结束、客户端收到空响应**，
+   进程不死，问题完全不可诊断。修法：`_capture()` 转成 `(None, log, reason)`，
+   并用 `contextlib.redirect_stdout` 把 CLI 的 print 一并捕获成运行日志。
+2. **只给退出码 = 用户看不到原因**
+   合规闸的写法是 `print(reason, file=sys.stderr); sys.exit(2)` —— 人类可读的
+   原因与机器码**分开传递**。只回 `exit 2`，界面就显示「合规闸拒绝（exit 2）」，
+   用户得展开日志才知道为什么被拒。`_pick_reason()` 从捕获日志里挑
+   `[BLOCK]`/`[FAIL]` 开头的行作为提示（实测已回出「目标 'x' 不在授权范围」）。
+3. **界面不得放宽自律下限**
+   `interval ≥ 6s`、`max_requests ≤ 10` 在 `api_check` 里**强制钳制**并回显
+   `clamps`；CLI 保留专家自由度，界面不做例外 —— 否则「自律」只是纸面。
+   测试要用小值时 **monkeypatch `webui.MIN_INTERVAL`**，
+   不在生产代码里开环境变量后门。
+
+### 并发
+
+`_CHECK_LOCK` 把规则引擎执行串行化：方法学前提本就是单线程 + 限速，且
+`_capture()` 用的是**进程级** `sys.stdout` 重定向，并发请求会互相串台。
+
+### ⚠️ Windows 文件名陷阱（NTFS ADS）
+
+host 带端口时，`f"rules_{host.replace('.','_')}.json"` 会生成含 `:` 的路径 ——
+NTFS 把 `:` 之后解释为 **alternate data stream**：文件本体 **0 字节**、证据躺在
+隐藏流里，而 `os.path.isfile()` 与 `getsize()` **全部正常**
+（实测返回 True / 1854 bytes），`ls` 却显示 0 字节，复制 / 打包 / 提交时内容
+直接丢失。已抽 `orchestrator.safe_evidence_name()` 供 CLI 与 Web 共用
+（`.` → `_`，保持既有产物命名不变）。靶场两条断言锁住。
+**「所有校验都通过、只有人眼能发现」的失效必须从命名层堵掉。**
+
+### 两处已知不一致（未修，已记录）
+
+1. `orchestrator.target_in_scope()` **不剥端口**，而
+   `rules_engine.target_in_scope()` 会剥（`t.split(":")[0]`）——
+   同一 target 在 init 与 check 两侧判定可能相反。
+2. 由此 coverage 的资产匹配也不剥端口：Web 端用 `host:port` 核查后，
+   `scope.hosts_missing` 仍把它列为「缺失」（实测 `hosts_missing: ['127.0.0.1']`，
+   而该资产其实已跑到）。对补天实战（查域名不带端口）无影响，
+   但查 `host:8443` 会误导。**修它要动 coverage 读数语义，需单独评估。**
+
+### 靶场
+
+`_test_webui_lab.py` 39 条：用 `Handler.__new__(Handler)` 跳过 `__init__`
+（否则会真的收发 HTTP），直接调 `api_*`。覆盖：范围外拒绝不逃逸 SystemExit /
+自律钳制 / 产物并入会话 / 合并语义 / 无会话友好错误 / 证据名净化 / 离线保证。
+**全量回归 12 个靶场 532 条全绿。**
+
+## 十六、提交记录
 
 fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）

@@ -1,12 +1,18 @@
 # 项目记忆 - 自动挖洞平台（速查）
 
-> 详情见 `HANDBOOK.md`：**十一 闭环纪律 · 十二 覆盖度机器观测层 · 十三 外部排除判据库 · 十四 取证与工程纪律全文**。过程记录 `2026-09-21.md`、`2026-09-22.md`。本文只放「不知道就会犯错」的要点，一条一句。
+> 详情见 `HANDBOOK.md`：**十一 闭环纪律 · 十二 覆盖度机器观测层 · 十三 外部排除判据库 · 十四 取证与工程纪律全文 · 十五 Web 控制台**。过程记录 `2026-09-21/22/23.md`，目标进展与待办 `LEDGER.md`。本文只放「不知道就会犯错」的要点，一条一句。
 
 ## 骨架
 
-- 工程结构（模块清单 / `rules/data/` 六个 JSON 库）/ 子命令 / 合规闸 / CVSS 引擎调用 / 工具清单 → **全文 HANDBOOK 十四**
+- 工程结构 / 子命令 / 合规闸 / CVSS 调用 / 工具清单 → **全文 HANDBOOK 十四**
 - 置信度 `detected🔍`→`confirmed✅`→`exploited💥`；**detected 不得提交 SRC**。`rate_findings` 重算会重置置信度 → `generate_report` 必须回放 `session["verifications"]`
-- **本机 shell 三坑**（每一条命令都会踩）：① git 写全路径 `~/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe` ② **沙箱 bash 的 PATH 被 shim 每条命令都重置**（`ls`/`grep`/`git` 全 command not found）→ 命令自带 `export PATH=".../usr/bin:.../bin:/c/Windows/System32:$PATH"` 或写全 `.exe` ③ **PowerShell 抓不到 stdout**，`rm` 也别用（走 Python `os.remove`）
+- **本机 shell 三坑**：① git 写全路径 `~/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe` ② **沙箱 bash 的 PATH 每条命令都被 shim 重置** → 命令自带 `export PATH=".../usr/bin:.../bin:/c/Windows/System32:$PATH"` 或写全 `.exe` ③ **PowerShell 抓不到 stdout**；删文件走 Python `os.remove`
+
+## Web 控制台（webui.py · 详情 HANDBOOK 十五）
+
+- **SystemExit 会静默杀死 Web 请求线程**：合规闸用 `sys.exit(2)`，而 SystemExit 继承 `BaseException`、`socketserver` 只捕 `Exception` → 线程静默结束、客户端收空响应（进程不死，最难查）→ 必须 `_capture()` 兜。**且只回「exit 2」等于没告诉用户原因**，要从捕获日志挑 `[BLOCK]/[FAIL]` 行
+- **⚠️ Windows 文件名 ADS 陷阱**：host 带端口时 `rules_x:port.json` 的 `:` 被 NTFS 当 **alternate data stream** → 本体 **0 字节**、内容藏流里，而 `isfile()`/`getsize()` **全部正常**（实测 True/1854B），`ls` 显示 0 字节 → 已抽 `safe_evidence_name()`
+- 界面强制自律下限（`interval≥6s`/`max_requests≤10`）并回显 `clamps`；**靶场改小值用 monkeypatch `webui.MIN_INTERVAL`**
 
 ## 补天公益 SRC
 
@@ -24,13 +30,13 @@
 
 ## 证据铁律（两次翻车换来 · 全文 HANDBOOK 十四）
 
-1. **「缺失」与「值为 None」必须字面可区分**：缺失写 `<未声明>` + `*_present` 布尔。**属性不存在的中间表示不能复用「有值」的值域**（曾把缺失读成 `SameSite=None` → 写出「Chrome 会拒绝」的自我削弱附注）
+1. **「缺失」与「值为 None」必须字面可区分**：缺失写 `<未声明>` + `*_present` 布尔。**属性不存在的中间表示不能复用「有值」的值域**（曾把缺失读成 `SameSite=None`，写出自我削弱附注）
 2. **改了底层函数 ≠ 修好调用点** → 端到端复跑并比对原始输出
 3. **urllib 默认跟随 30x**：会把「明文 301」记成「200 不跳转」。判跳转须 `redirect_request` 返 None，再从 `HTTPError.headers` 取 Location
 4. **写前自问：这句措辞在帮我还是在帮厂商？** 真实减分项如实写；误读出的必须删
 5. **多值头会被 `dict(headers)` 静默截断**，且 **CSRF token ≠ 会话 Cookie**（同发 `XSRF-TOKEN` + `laravel_session` 时真会话 Cookie 会丢）。Set-Cookie 必须单独存 `_all_set_cookies`；两者正则必须互斥，否则「会话劫持链」被一句话驳回
 6. **非 200 不能静默丢弃**（违反「排除必产 negative」）；≥500 或体积 ≥3× 基线 → `needs_manual_check`
-7. **异常响应先取证再下结论**：引擎只记状态码 + 字节数。`rmt` 500/38659B 直觉是 Laravel 调试页，**实为 WAF 拦截页**；`qmt` 404/11043B 是站点自身 404 页。**按表象写就是幻觉发现**
+7. **异常响应先取证再下结论**：引擎只记状态码 + 字节数。**直觉判断两次都被推翻**（疑似 Laravel 调试页实为 WAF 拦截页 / 疑似泄露实为站点自身 404 页）→ **按表象写就是幻觉发现**
 8. **前置 WAF 污染状态码判据** → 「未命中」=「未取得可判定证据」，**不等于**「路径不存在或已防护」，必须写进结论边界
 
 ## 措辞与测试铁律
@@ -43,7 +49,7 @@
 
 ## 响应分类与 R014（P1 · 全文 HANDBOOK 十四）
 
-- **`base.classify_response()`**（`error_pages.json` 120 条）分报错页 / 拦截页 / 拒绝页 / 目录列举。三条硬边界：①**过泛词**（`error`/`line`/`server at`）只作旁证，单独采信 = 抑制器自己变假阳性来源 ②**`listing`（Index of / Parent Directory）是正向证据**（CWE-548），禁止用于抑制 ③命中后**写进措辞**（「实测为 WAF/拦截页」），不写「疑似」
+- **`base.classify_response()`**（`error_pages.json` 120 条）分报错页 / 拦截页 / 拒绝页 / 目录列举。三条硬边界：①**过泛词**（`error`/`line`/`server at`）只作旁证，单独采信 = 抑制器自己变假阳性来源 ②**`listing`（Index of / Parent Directory）是正向证据**（CWE-548），禁止用于抑制 ③命中后**写进措辞**（「实测为 WAF/拦截页」）
 - **非 200 也必须带分类结论**：405/1841B 看着像「未取得 200 内容」，实为**阿里云统一错误页** → 含义是「请求在边缘节点就被拦了」，源站有没有这个文件**根本没被判定**
 - **跨路径一致性**：多条**不同**路径返回**字节完全相同**的非 200 响应 = 站点通用错误页模板（qmt：`.git/config` 与 `laravel.log` 都是 404/11043B/同 sha256）。据此可把「需人工查看响应体」降级，但**不解除**「文件是否存在」的疑问
 - **R014（凭据/密钥暴露，0 额外请求）**：排 ORDER 末尾。「敏感名字 + 赋值号 + 引号值」三要素 + 占位符/低熵过滤（**`\b` 在 `your_api_key` 上不成立**，`_` 属于 `\w`）。**隐私铁律：只记类别名 + 次数 + 值的长度与字符集，不记值也不记其哈希**（低熵口令哈希可反查）
@@ -60,22 +66,20 @@
 
 ## 覆盖度机器观测层（strix 第 2 项 · 全文 HANDBOOK 十二）
 
-**「规则执行了」≠「检查面被覆盖」。** 分子从「跑过没有」换成「**取得证据没有**」：**资产**用 `_host_effective(h)`（有 finding，或至少一条 `outcome ≠ needs_follow_up`）；**规则**改 credit 制（未执行 **0** / 只产待跟进 **0.5** / 取得证据 **1.0**）—— 0.5 不是折中：请求发了、响应分析了但没拿到可判定证据，布尔口径会把「没跑 / 跑了没用 / 有效」压成两种。全站被 WAF 挡死时每条规则都只产待跟进 → 台账写「已核查 8 个资产」实质连真实响应都没看到，这类进 `scope.hosts_weak` 单列。`render()` 加**计分口径声明**并排写两种口径
+**「规则执行了」≠「检查面被覆盖」。** 分子从「跑过没有」换成「**取得证据没有**」：**资产**用 `_host_effective(h)`（有 finding，或至少一条 `outcome ≠ needs_follow_up`）；**规则**改 credit 制（未执行 **0** / 只产待跟进 **0.5** / 取得证据 **1.0**）。全站被 WAF 挡死时每条规则都只产待跟进 → 台账写「已核查 8 个资产」实质连真实响应都没看到，这类进 `scope.hosts_weak` 单列
 
-- **⚠️ 实测反直觉：三份真实产物上新旧口径读数完全相同**（资产 1.0→1.0，规则 0.154/0.231/0.077），因为 `ineffective=[]`。**差异只在「有规则只产待跟进」或「有资产被挡死」时才显现** → ① **别把「规则维度低分」当成观测层生效的证据**（低分主因是「可达 13 条只跑了 1~4 条」）② **旧产物 `negatives` 无 `outcome` 键会被 `or "no_issue_found"` 兜成「有效证据」**，只有新跑的 `check` 享受新口径（预期，非 bug）
+- **⚠️ 三份真实产物上新旧口径读数完全相同**（`ineffective=[]`）→ 差异只在「有规则只产待跟进」或「有资产被挡死」时显现。**别把「规则维度低分」当成观测层生效的证据**（低分主因一直是「可达 13 条只跑了 1~4 条」；旧产物 `negatives` 无 `outcome` 键会被兜成「有效证据」，仅新跑的 `check` 用新口径 —— 预期非 bug）
 
 ## 外部排除判据库 + 驳回风险预演（strix 第 3 项 · 全文 HANDBOOK 十三）
 
 原料 strix `skills/vulnerabilities/*.md`（29 篇，Apache-2.0），**只抽 False Positives 段**（Attack Surface / Reconnaissance 要带参探测，与只读冲突）
 
-- **`rules/data/fp_rubric.json`**（`_build_vuln_kb.py`）：29 类 / **128 条判据**（direct 38 / conditional 25 / out_of_scope 65）+ 10 条规则映射 + **5 条跨类纪律 D-01~D-05**。**构建脚本强制逐条定性，漏/多/重复即拒绝生成**。**`out_of_scope` 照收不丢** —— 它规定了「什么样的证据才算数」
-- **⭐ D-01（直接纠正本平台）**：**不得仅因信息有助于侦察就给 `C:L`** —— `C:L` 要求**实际获取了受限信息**；版本 / source map / schema / 路径**只是暗示**了另一个漏洞时，要么验证整条链，要么保持 `C:N` 且**不提交该报告**。**D-02**：版本→CVE 三步，**第②步必须确认可达性**
-- **`fp_review.py`** 离线 0 请求、**warning 级不阻断提交**，三探针（版本横幅 / 通用报错页 / 鉴权枚举），接进 `generate_report()`；**`EL035`/`EL036`** 抓「命中外部排除判据」「向量含 `C:L`·`C:H` 但证据只有 URL+status」，判据收窄到「证据里连一点内容/结构信息都没有」否则变噪音源 —— **实测噪音量 0**
-- **R005 加「攻击面证据门槛」**：厂商带 `_trigger_condition`（默认不触发）时**版本命中不足** → 从 `ctx.shared` 采上游事实（**0 额外请求**：`admin_no_captcha`/`bypass_cookie`/`admin_exposed`/`plaintext_ok`）；缺证据且在 `MAX_DEFERRED=3` 内 → **不产发现、改产待跟进**
-- **编排顺序即检测能力**：`ORDER` = `R006 R001 R002 R003 R004 R013 R005 …` —— **R004 必须早于 R005**，否则 R005 看不到 `admin_no_captcha`，会把高危降级成待跟进
+- **`rules/data/fp_rubric.json`**（`_build_vuln_kb.py`）：29 类 / **128 条判据**（direct 38 / conditional 25 / out_of_scope 65）+ 10 条规则映射 + **5 条跨类纪律 D-01~D-05**。**构建脚本强制逐条定性，漏/多/重复即拒绝生成**；**`out_of_scope` 照收不丢**（它规定「什么样的证据才算数」）
+- **⭐ D-01（直接纠正本平台）**：**不得仅因信息有助于侦察就给 `C:L`** —— 要**实际获取了受限信息**；版本 / source map / 路径**只是暗示**了另一个漏洞时，要么验证整条链，要么保持 `C:N` 且**不提交该报告**。**D-02**：版本→CVE 三步，**第②步必须确认可达性**
+- **`fp_review.py`**（离线 0 请求、**warning 级不阻断提交**，接进 `generate_report()`）+ **`EL035`/`EL036`**，判据收窄到「证据里连一点内容/结构信息都没有」否则变噪音源 —— **实测噪音量 0**
+- **R005 攻击面证据门槛**：厂商带 `_trigger_condition`（默认不触发）时**版本命中不足** → 从 `ctx.shared` 采上游事实（**0 额外请求**）；缺证据且在 `MAX_DEFERRED=3` 内 → **不产发现、改产待跟进**。**`ORDER` 里 R004 必须早于 R005**，否则看不到 `admin_no_captcha` 会把高危降级
 
 ## 台账
 
 → **已拆到 `LEDGER.md`**（目标进展 / 待办 / 回归基线），本文不重复。
-速记：ikuai8 = F-10 高危（Discuz! X3.3 EOL，7.4/7.7）；jiaoyu = J-01 中危，匿名侧扎实、
-登录态未覆盖；回归基线 **11 个靶场 493 条全绿**。
+速记：ikuai8 = F-10 高危（7.4/7.7）；jiaoyu = J-01 中危，匿名侧扎实、登录态未覆盖；回归基线 **12 靶场 532 条全绿**。

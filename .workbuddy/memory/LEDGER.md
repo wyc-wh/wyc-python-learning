@@ -27,16 +27,18 @@
 
 ## 回归基线
 
-**11 个靶场 493 条全绿**：6 + 37 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40
+**12 个靶场 532 条全绿**：6 + 37 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40 + 39
 （authgate / evidence_lint / coverage / rules / stack / authz / api_surface /
-service_version / p1 / closure / fp）
+service_version / p1 / closure / fp / webui）
 
 ## 待办（优先级降序）
 
 1. 提交回执闭环（比挖新洞更重要）
 2. ikuai8 的 `demo.` / `icc.` 登录态验证
-3. **Web 界面接入只读规则引擎**：`webui.py` 仍是 v0.5 基线版，
-   无 `/api/check` → R001~R014 / lint / coverage / fp_review / credentials
-   在 Web 端完全不可用（只能走 CLI）。2026-09-23 已修其 scan 分支的
-   `payload` 未定义必崩点，但「前端与能力脱节」本身未解决
-4. XBEN 外部基准（只读方法学下分数会极低，但这本身把「合规代价」量化出来）
+3. **修 `target_in_scope` 两处实现不一致**：`orchestrator` 版**不**剥端口 /
+   `rules_engine` 版会剥 → 带端口的 target 在 init 与 check 两侧判定相反，
+   coverage 的 `hosts_missing` 会把已核查的 `host:port` 误报为缺失。
+   **动它要改 coverage 读数语义，需单独评估**
+4. **Web 端仍未接** `fp_review`（驳回风险预演）与 `credentials`（登录态）——
+   规则引擎 / lint / coverage 已于 2026-09-23 接入（②卡片）
+5. XBEN 外部基准（只读方法学下分数会极低，但这本身把「合规代价」量化出来）
