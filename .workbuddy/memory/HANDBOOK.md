@@ -269,6 +269,110 @@ surface and no chain」的机器化。**D-02**：版本→CVE 三步，**第②�
 EL035/EL036 门禁反证 + 渲染 + 离线保证）。
 **全量回归 11 个靶场 493 条全绿**。
 
-## 十四、提交记录
+## 十四、取证与工程纪律（详情层 · MEMORY.md 的展开）
+
+> MEMORY.md 里这些条目只有一句要点，全文在此。
+
+### 骨架清单
+
+`pentest-orchestrator/`：`orchestrator.py`(CLI) `rules_engine.py` `rules/`(R001~R014)
+`scanners.py`(nmap+nuclei) `cvss.py` `exploit.py` `manual_probe.py` `coverage.py`
+`evidence_lint.py` `credentials.py` `fp_review.py` `_lab_cert.py` `_build_vuln_kb.py`。
+数据：`rules/data/` 下 `service_versions.json` / `vuln_components.json` / `error_pages.json` /
+`secret_patterns.json` / `stacks.json` / `fp_rubric.json`。
+文档：`RULES.md`（规则清单与适用边界）、`CLOSURE.md`（闭环纪律）。
+子命令：`init plan autorun engage verify report status check lint submit coverage`。
+合规闸：授权确认 + 范围校验 + `auth.json` + append-only 审计 + 破坏性阶段禁用 +
+`allow_scanner=false` 硬开关。工具：nmap 7.92 / nuclei v3.11.1 / ffuf / gobuster /
+feroxbuster / subfinder / amass / httpx / sqlmap / wafw00f（缺 nikto whatweb hydra john）。
+
+**本机 shell 三个坑**：① git 用全路径
+`~/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe`
+② **沙箱 bash 的 PATH 每条命令都被 shim 重置**（`dirname`/`ls`/`grep`/`git` 全 command not found），
+`export PATH=...` 在 `&&` 链里也可能被重置 → 每条命令自带 export，或直接写全 `.exe` 路径
+③ **PowerShell 的 stdout 抓不到**（只回「Command completed with exit code 0」）→ 别用它取数据。
+POSIX `rm` 被 shim 包了一层 safe-delete，同样受 ② 影响 → 删文件可用 Python `os.remove`。
+
+### 证据铁律（两次翻车换来）
+
+1. **「缺失」与「值为 None」必须字面可区分**：缺失写 `<未声明>` + `*_present` 布尔。
+   **属性不存在的中间表示不能复用「有值」的值域** —— 曾把 Cookie 缺失读成
+   `SameSite=None`，进而写出「Chrome 会拒绝该 Cookie」这类**自我削弱附注**，
+   等于替厂商备好驳回理由
+2. **改了底层函数 ≠ 修好调用点**：`fetch()` 加了 `follow_redirect` 参数，
+   但 `main()` 仍走默认跟随 → 端到端复跑并比对原始输出
+3. **urllib 默认跟随 30x**：会把「明文 301」记成「200 不跳转」。判断是否跳转须让
+   `redirect_request` 返回 None，再从 `HTTPError.headers` 里取 Location
+4. **写前自问：这句措辞在帮我还是在帮厂商？** 真实减分项如实写；误读出来的必须删
+5. **多值头会被 `dict(headers)` 静默截断**：一个响应同时下发 `XSRF-TOKEN` +
+   `laravel_session` 时，**真正的会话 Cookie 被丢掉**，证据里只剩 CSRF token。
+   Set-Cookie 必须单独存多值列表（`_all_set_cookies`），解析优先取它
+6. **CSRF token ≠ 会话 Cookie**：会话正则若含泛化 `token`，会把 XSRF-TOKEN 判成会话标识；
+   窃取 CSRF token 不能劫持会话，据此论证「会话劫持链」会被一句话驳回。两者正则必须互斥
+7. **非 200 不能静默丢弃**：既不产 finding 也不产 negative 会违反「排除必产 negative」，
+   且暗示「文件不存在」。≥500 或体积 ≥3× 基线 → 标 `needs_manual_check`（「未取得可判定响应」）
+8. **异常响应先取证再下结论**：引擎只记状态码 + 字节数，**无法判断正文是什么**。
+   `rmt` 的 500/38659B 直觉是 Laravel 调试页泄露，**实为 WAF 拦截页**
+   （`Server: ZS-Proxy21/v201`，正文基本是 base64 内嵌图片）；`qmt` 的 404/11043B
+   是站点自身 404 页。**按表象写就是幻觉发现**
+9. **前置 WAF 污染状态码判据**：同一路径可能返回拦截页 / 跳转 / 自定义错误页 →
+   「未命中」的真实含义是「**未取得可判定证据**」，**不等于**「路径不存在或已防护」，
+   这一区别必须写进结论边界，否则覆盖度结论是假的
+
+### 措辞铁律（会直接印进报告和提交稿）
+
+- 规则名 / 发现名**不写主观词**：「不跳转」→ 改；「返回完整内容」→ 实测 `{bytes}B`。
+  **能被机器验证的写事实，不能验证的别写形容词**
+- 提交稿「影响分析」由 CVSS 向量推出「利用前提」(AV/AC/PR/UI/S) +「安全影响」(C/I/A)，
+  不写套话
+
+### 测试基建铁律
+
+1. 会写真实配置文件的测试**先备份再还原**（曾删掉真实 `auth.json`）；
+   环境隔离 `PENTEST_AUTH`/`PENTEST_SESSIONS` + `tempfile.mkdtemp()`
+2. **靶场红时先分辨「数据脏」还是「代码错」**（P3 首跑 6 红里 4 条是数据不合格；
+   P4 首跑 6 红里 2 条是 cookie 名写错）。**别改断言迁就**
+3. **靶场必须自检 `status=None`**：忘 `verify_tls=False` 会让 HTTPS 全部失败，
+   却表现为「站点没内容」→ **假通过**（P2/P4 各踩一次）
+4. **禁止用 `python -c`/bash 内联写含反引号的中文长文本**：反引号被 bash 当命令替换执行，
+   内容被静默挖空（踩过**两次**）→ 一律用 Write 写 .py 脚本再执行；
+   **规则数量别硬编码**，从 `rules.load_rules()` 动态取
+
+### 响应分类与 R014（P1）
+
+- **`base.classify_response()`**（`rules/data/error_pages.json` 120 条）把响应分成
+  报错页 / 拦截页 / 拒绝页 / 目录列举。三条硬边界：
+  ①**过泛词**（`error`/`line`/`Internal Server Error`/`server at`）只作旁证，
+  单独采信 = 抑制器自己变成假阳性来源
+  ②**`listing`（`Index of` / `Parent Directory`）是正向证据**（CWE-548），禁止用于抑制
+  ③命中后要**写进措辞**（「实测为 WAF/拦截页（waf:创宇盾）」），不写「疑似」
+- **非 200 也必须带分类结论**：`/storage/logs/laravel.log` 返 405/1841B 看着像
+  「未取得 200 内容」，实为**阿里云统一错误页**（`errors.aliyun.com`）→ 含义是
+  「请求在边缘节点就被拦了」，源站有没有这个文件**根本没被判定**
+- **跨路径一致性**：多条**不同**路径返回**字节完全相同**的非 200 响应 = 站点通用
+  错误页模板，不是路径内容（qmt：`.git/config` 与 `laravel.log` 都是 404/11043B/
+  同 sha256）。可据此把「需人工查看响应体」降级，但**不解除**「文件是否存在」的疑问
+- **R014（凭据 / 密钥暴露，0 额外请求）**：扫前面规则已取回的响应，排 ORDER 末尾。
+  判据必须「敏感名字 + 赋值号 + 引号值」三要素 + 占位符 / 低熵过滤
+  （**`\b` 在 `your_api_key` 上不成立**，`_` 属于 `\w`，占位符规则要显式接受
+  分隔符 / 数字 / 结尾）。**隐私铁律**：只记类别名 + 次数 + 值的长度与字符集，
+  **不记值也不记其哈希**（低熵口令哈希可反查）。与 R008 重叠时以 R008 为准
+- **字典库原料「不读就信」是最大风险**：`HTTP/errors.txt` 曾被误判为「WAF 拦截页特征表」，
+  读过原文才发现是 **SQL/框架报错串表**；`secret-keywords.txt` 69 行是裸关键词，
+  单独使用会命中每一个网页。故构建脚本**强制逐条定性**（漏 / 多 / 重复一律报错退出）
+
+### 通用工程坑（展开）
+
+- **nuclei 必须 `-no-interactsh`**：约 710 个模板回连 `oast.*` 被网关掐断（零输出、无提示）
+- 去重两层：`(template_id, matched_at)` + `(类别, 归一化位置)`；`type=generic` 视为未知类别
+- **「工具没装」先怀疑调用侧**：中文 Windows 用 `encoding="utf-8"` 会丢输出；
+  端口列表别用 `split()`（nmap 会把端口串当主机名）。**耗时 = 超时整数倍 → 参数拼错；
+  秒返空 → 编码问题**
+- Windows 不能用 `SO_REUSEADDR` 探测端口；nmap 无 Npcap 时 `-sV` 挂起 → 降级 `-sT`；
+  Go 版本号先剥 ANSI 色码；`_find_exe` 认 `.bat/.cmd/.py`
+- 合规闸统一 **rc=2 + stderr**（`sys.exit(str)` 是 rc=1）；`git ls-files` 非 ASCII
+  转八进制 → `-z` + escape_decode；中文名 ENOSYS → `--ignore-errors`
+
+## 十五、提交记录
 
 fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）
