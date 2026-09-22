@@ -18,6 +18,10 @@
 - **「工具没装」先怀疑调用侧**：① 中文 Windows 下 `encoding="utf-8"` 丢输出 → 多编码回退 ② `split()` 用在端口列表上会让 nmap 把端口串当主机名卡满超时。**判别指纹：耗时恰为超时整数倍 = 参数拼错；秒返空 = 编码问题**。别轻易归因沙箱
 - Go 系版本号先剥 ANSI 色码；`python -m <pkg>` 不万能（wafw00f 无 `__main__.py`）；`_find_exe` 要认 `.bat/.cmd/.py`
 - nuclei 的 `type=generic` 视为未知类别，允许与内置类别同位置折叠，否则去重失效
+- **⚠️ urllib 默认跟随 30x，会把『明文 HTTP 301 跳转』记成『200 不跳转』** ——
+  曾因此把 3 条发现（ikuai8 F-01/F-06/F-11）的依据写成错的，差点带错证据提交。
+  凡判断跳转行为，必须 `HTTPRedirectHandler.redirect_request` 返回 None 禁跟随，
+  再从 `HTTPError.headers` 取 Location。`manual_probe.py` 已加 `follow_redirect` 参数
 
 ## 二、补天公益 SRC 规则（用户 2026-09-21 纠正，务必遵守）
 
@@ -111,3 +115,26 @@ Go vs Python 不兼容、过度工程、其提示词明令「Never request permi
 - **ikuai8.com**：F-10 高危（Discuz! X3.3 EOL + 登录失败计数失效，7.4/7.7）
 - **jiaoyu.cn**：J-01 中危（qmt 安全头占位符失效，6.8/6.4）。**该站鉴权扎实，未挖到高危**，
   已登录态因无账号未覆盖 —— 若要深挖需先解决测试账号问题
+
+## 只读规则引擎（2026-09-22 落地）
+
+`rules/` + `rules_engine.py` + `orchestrator.py check` 子命令。靶场 `_test_rules_lab.py` 21 项断言。
+
+- **不是扫描器**：不发 payload/不遍历/不并发/默认只 GET/HEAD → **不受 allow_scanner 闸约束**，
+  但强制范围校验 + 单线程限速(≥6s) + 请求预算 + 审计链
+- **置信度恒为 detected 🔍**，绝不自动 confirmed —— 规则命中 ≠ 已确认
+- **排除必产 negative**（证明核查过），预算耗尽标 `unfinished`
+- 8 条规则：R001 安全头占位符污染 / R002 客户端绕过 / R003 明文+Cookie / R004 后台入口 /
+  R005 版本命中官方公告 / R006 catch-all 基线(抑制器) / R007 零破坏写探测(默认关) / R008 敏感文件
+- 关联分析比单条规则重要：COR-T01(R001∧R003)=6.8 传输层链；COR-A01(R004∧R005)=沿用公告向量 7.4
+- 实战已自动复现人工发现：bbs.ikuai8.com → F-10(7.4)/F-05(6.5)；qmt.jiaoyu.cn → J-01(6.8)
+- `check --auth-manifest` 支持多项目授权清单隔离（auth.json 只能描述一个项目）
+
+### 规则引擎实现要点（复用时避开）
+
+- **缓存 key 必须含请求头**：只按 (method,url) 会吞掉 R002「同一 URL 带伪造 Cookie」的第二次请求（漏报，不报错）
+- **`OpenerDirector.open()` 不接受 `context=`**：只有 `urlopen` 接受；关 TLS 校验要 `build_opener(HTTPSHandler(context=ctx))`
+- **`Powered by <a>X 3.3</a>` 正则里 `<...>` 必须整体可选** `(?:<[^>]*)?`，否则纯文本页脚全漏
+- **首页可能是拦截页**：版本等信息在「绕过后的页面」里 → R005 复用 R002 的缓存再取一次（0 额外请求）
+- **根路径跳 HTTPS ≠ 后台也跳**：R003 需对后台入口做二段复检
+- **靶场用协议嗅探单端口同时服务 HTTP/HTTPS**（首字节 0x16 = TLS ClientHello）
