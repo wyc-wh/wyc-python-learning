@@ -68,12 +68,16 @@
 
 ## 六、覆盖度量化
 
-`coverage.py` + `orchestrator coverage`。靶场 62/62。
+`coverage.py` + `orchestrator coverage`。靶场 81/81（含 ⑪ 段机器观测层 19 条）。
 **必须拆两个数**：`score` 核查完成度（相对当前方法学可达范围，多跑就涨）/ `ceiling` 方法学上限（匿名 + 只读 + conservative = **20%**，结构性）。
 **刻意不把 ceiling 计入 score**：否则匿名只读永远不及格 → 分数失去区分度。结构性限制单列：不掩盖，也不污染可改进项。
 五维度权重：资产 0.30 / 规则 0.25 / 完整性 0.15 / 栈定向 0.15 / 证据质量 0.15。`绝对覆盖度 = score × ceiling / 100`。
 分母：资产取 `in_scope`（`out_of_scope` 不混入）；规则 = 全量 − 需写探测且未开启的；无证据时证据维度 = 0；有 `unfinished` → 完整性 50% + blocker gap。
 **副产品：改进收益排序** `gain=(1-score)×weight×100` 降序。直觉以为「1/3 资产」比「1/8 规则」缺口大，实际规则 21.9 > 资产 20.0 —— **边际收益必须算，不能猜**。
+
+**⓪ 机器观测层（第 2 项，详见第十二节）**：资产 / 规则两个维度的分子都从「跑过没有」
+改成「**取得证据没有**」—— 资产用 `_host_effective()`，规则用 credit 制（0 / 0.5 / 1.0）。
+`render()` 里并排写出两种口径。**这是把「规则执行 ≠ 检查面被覆盖」从口号变成分数的那一步。**
 
 ## 七、登录态建模
 
@@ -98,7 +102,7 @@
 
 - **PentAGI**（`D:\gihub\pentagi-main`，MIT，Go+Docker 12 服务）：**只借鉴方法论，不集成架构** —— Go/Python 不兼容、过度工程、其「Never request permission」与人工确认制对撞、全攻击链自动化对 SRC 是合规风险。已借鉴：置信度三级 / 覆盖度 / 脱敏 / CLI 反幻觉协议。
 - **Strix**（`D:\gihub\strix-main`，Apache-2.0，Python 226 文件 / 源码 40.6k 行 + 技能库 690KB）：**不集成代码，但方法论借鉴价值高于 PentAGI 与字典库** —— 它是自主 AI 渗透 agent（Docker 沙箱 + Caido 代理 + Playwright + shell + Python exploit runtime + 多 agent 编排），执行模型要发 payload/起 shell，与补天公益禁自动化扫描器与破坏性操作**直接冲突**；依赖 Docker + LLM + `openai-agents` SDK，与「零依赖纯标准库」不兼容；**全仓无授权闸**（只有 README 一句 WARNING，`core/inputs.py` 的 authorized_targets 只是给 agent 的范围上下文，非强制校验）。XBEN 104 题 96% 成功率（v0.4.0）。
-  借鉴（按价值）：① `strix/skills/analysis/counterevidence.md` —— 闭环纪律，**已落地，见第十一节**；② `report/coverage.py` + `tools/coverage/tools.py` —— **自我陈述 vs 机器观测双源 + 矛盾即 gap**（第 2 项，`ineffective_rules` 已做半层，尚未影响 score）；③ 29 类漏洞知识库（`skills/vulnerabilities/*.md`，292KB）结构固定为 Attack Surface / Reconnaissance(参数清单) / Validation / **False Positives** / Impact → 抽取式可用（第 3 项）；④ `severity_change_conditions` 字段；⑤ `report/sarif.py` SARIF 2.1.0；⑥ 外部基准 XBEN。⚠️ **`False Positives` 那节对本平台直接致命**：`information_disclosure.md` 明写「Version banners with no exposed vulnerable surface and no chain」不算 —— **正对着 R013/R005 的打法**，继续走这条路前必须先消化这句反例。
+  借鉴（按价值）：① `strix/skills/analysis/counterevidence.md` —— 闭环纪律，**已落地，见第十一节**；② `report/coverage.py` + `tools/coverage/tools.py` —— **自我陈述 vs 机器观测双源 + 矛盾即 gap**，**已落地，见第十二节**；③ 29 类漏洞知识库（`skills/vulnerabilities/*.md`，292KB）结构固定为 Attack Surface / Reconnaissance(参数清单) / Validation / **False Positives** / Impact → 抽取式可用，**已落地第 3 项（只抽 False Positives），见第十三节**；④ `severity_change_conditions` 字段；⑤ `report/sarif.py` SARIF 2.1.0；⑥ 外部基准 XBEN。⚠️ **`False Positives` 那节对本平台直接致命**：`information_disclosure.md` 明写「Version banners with no exposed vulnerable surface and no chain」不算 —— **正对着 R013/R005 的打法**，**已消化为 D-01 + R005 攻击面证据门槛**（第十三节）。
 - **字典库**（`D:\gihub\Dictionary-Of-Pentesting-master`，913MB / 4991 文件）：**只能「抽取式集成」**。关键判断：**99.96% 是给扫描器 / 爆破器用的**（口令、用户名字典、御剑/DirBuster 目录爆破、xxe/top25 参数 fuzz、2M 子域字典、UA 池）→ 全部踩补天红线，禁用。真正能用的约 400KB，边际价值排序：**版本正则 > 错误页特征 > 密钥正则 > 路径库**（nuclei 13742 模板已有类似路径内容，边际低）。
 
 | 可集成 | 对接 | 补什么缺口 |
@@ -156,11 +160,115 @@
 「测无发现」，但重定向说明「服务端把该路径路由到了别处」，存在性同样未判定
 → 措辞必须带上重定向目标与该边界。
 
-**未做（第 2 / 3 项）**：① `counterevidence` / `severity_change_conditions`
-未结构化（只有 EL034 提示）；② 机器观测层尚未影响 `score`（`ineffective_rules`
-只进 gaps）—— 做了之后 jiaoyu 那份 100/100 会诚实地降下来；
-③ `not_applicable` 无真实用例（**不为用满枚举值而硬塞**）。
+**未做（边界）**：① `counterevidence` / `severity_change_conditions` 未结构化
+（只有 EL034 提示）；② `not_applicable` 无真实用例（**不为用满枚举值而硬塞**）。
+（原「第 2 / 3 项」已完成，见第十二、十三节。）
 
-## 十二、提交记录
+## 十二、覆盖度机器观测层（strix 第 2 项）
+
+**为什么做**：第十一节的 `closure.ineffective_rules` 只是把「跑过、只产待跟进」的规则
+**列进 gaps**，分数照旧按「跑没跑」算 —— 于是 jiaoyu 那份 100/100 在账面上依然漂亮，
+尽管它的 R013 实质没生效、R010/R011 整个登录态面没覆盖。**矛盾说出来了，却没进分数。**
+
+**改法**（`coverage.py`）：分子从「跑过没有」换成「**取得证据没有**」。
+
+| | 旧（台账口径） | 新（取得证据口径） |
+|---|---|---|
+| 资产维度 | 有 `rule_checks` 记录即算 | `_host_effective(h)`：有 finding，或**至少一条** negative 的 `outcome ≠ needs_follow_up` |
+| 规则维度 | 布尔：跑过 = 1 | credit：未执行 **0** / 只产 `needs_follow_up` **0.5** / 取得证据 **1.0** |
+
+- `_host_effective` 要解决的场景：**整站被前置 WAF 挡死**时，每条规则都只能产
+  `needs_follow_up` —— 台账上写着「已核查 8 个资产」，实质连它的真实响应都没看到。
+  这类资产进 `scope.hosts_weak` 并被单列成 major gap，**不计入有效核查**
+- **0.5 不是折中拍脑袋**：请求确实发了、响应确实分析了（这部分成本已付），但
+  **没有拿到任何可判定证据**。布尔口径会把「完全没跑 / 跑了没用 / 有效」三种压成两种
+- 返回 dict 新增 `scope.{effective,hosts_weak}` / `rules.{effective,ineffective,credit}`；
+  `render()` 加**计分口径声明**并排写出两种口径，结论边界一律用 effective 计数
+
+**⚠️ 一个必须记住的实测反直觉结论**：**现有三份真实产物上新旧口径读数完全相同。**
+
+| 产物 | 资产 | 规则 | 无效规则 |
+|---|---|---|---|
+| `_closure_real_qmt2.json`（qmt，实跑 R006/R008） | 1.0 → 1.0 | 0.154 → 0.154 | — |
+| `rules_qmt_jiaoyu_cn.json`（qmt，实跑 R006/R013/R005） | 1.0 → 1.0 | 0.231 → 0.231 | — |
+| `rules_bbs_ikuai8_com.json`（bbs，实跑 R012） | 1.0 → 1.0 | 0.077 → 0.077 | — |
+
+原因：这些产物 `ineffective = []` —— 跑过的规则都产了非 `needs_follow_up` 的结论，
+没有资产被中间层挡死。**口径差异只在「有规则只产待跟进」或「有资产被挡死」时才显现**，
+所以它的效果由靶场 `_test_coverage.py` ⑪ 段（含两条反证 + 跨资产汇总）覆盖，而不是靠真实产物。
+
+两个直接推论：
+1. **别把「规则维度低分」当成观测层生效的证据** —— 低分主因一直是
+   「可达 13 条只跑了 1~4 条」，不是观测层扣的
+2. **旧产物（CLOSURE 之前写入的 `negatives` 没有 `outcome` 键）会被
+   `or "no_issue_found"` 兜成「有效证据」** → 只有新跑的 `check` 才享受新口径。
+   这是**预期**，不是 bug
+
+**⑪ 段的三条反证**（`_test_coverage.py`）：① 规则只产待跟进 → 得半分 → 总分确实下降
+② 整站只产待跟进 → 该资产不计入有效核查 ③ 跨资产汇总 —— 他处取得过证据则不算 ineffective。
+
+## 十三、外部排除判据库 + 驳回风险预演（strix 第 3 项）
+
+**原料**：`D:\gihub\strix-main\strix\skills\vulnerabilities\*.md`（29 篇，Apache-2.0）。
+只抽 **False Positives** 段（128 条排除判据）；`Attack Surface` / `Reconnaissance`
+需带参探测，**与只读方法学直接冲突，不抽**。29/29 篇都含 Validation + False Positives。
+
+**产物 ①：`rules/data/fp_rubric.json`**（生成脚本 `_build_vuln_kb.py`）
+
+- 29 类 / **128 条判据**（direct **38** / conditional **25** / out_of_scope **65**）
+  + **10 条规则映射**（R001 R002 R003 R004 R005 R008 R009 R012 R013 R014）
+  + **5 条跨类纪律 D-01~D-05**
+- 结构：`classes.<key>.{cn, readonly_default, count, fp[]{id,claim,cn,readonly}}`
+- **三档怎么定**：`direct` = 只靠已取回的 GET/HEAD 响应即可判定；
+  `conditional` = 需特定条件（带参 GET / 测试账号 / 一次已授权探测）但判据在只读框架内成立；
+  `out_of_scope` = 需写操作 / payload 利用 / 服务端行为观测，只读下不可判 ——
+  **仍收录**，因为它规定了「什么样的证据才算数」
+- **抽取式集成纪律**：`_build_vuln_kb.py` 把 29 类名与 128 条中文释义写成有序常量，
+  **强制逐条定性，条数不符 / 漏 / 多 / 重复即拒绝生成**（同 P1 字典库的教训）
+
+**⭐ D-01 直接纠正本平台**：**不得仅因信息有助于侦察就给 `C:L`。** CVSS 的 `C:L`
+要求**实际获取了受限信息**。若路径 / 主机名 / 版本 / source map / schema / 调试值
+**只是暗示**了另一个可能存在的漏洞，要么**验证整条链并按验证结果定分**，
+要么**保持 `C:N` 并且不提交该报告**。
+→ 这正是 `information_disclosure.md` 那句「Version banners with no exposed vulnerable
+surface and no chain」的机器化。**D-02**：版本→CVE 三步，**第②步必须确认可达性**。
+
+**产物 ②：`fp_review.py`**（离线、0 请求、**warning 级不阻断提交**）
+
+- `review_finding(f)` / `review_result(cr)` / `render(rep)` / `render_appendix(rep)`
+- 三个探针：`_probe_version_banner`(information_disclosure-04) /
+  `_probe_generic_error`(information_disclosure-02) /
+  `_probe_authz_enumeration`(weak_password_detection-04 / idor-05)
+- 接进 `generate_report()`，位置在**覆盖度之前**，附录用 `<details>` 折叠
+
+**产物 ③：`EL035` / `EL036`**（新增两道警告级门禁）
+
+- `EL035` 命中外部排除判据（来自 `fp_rubric.json` 的 rule_map）
+- `EL036` 向量含 `C:L` / `C:H` 但证据里**只有 URL + status** —— 判据刻意收窄到
+  「证据里连一点内容 / 结构信息都没有」才报，避免自我削弱式误报
+- **实测噪音量 0**：在全部已提交稿上未触发一次
+
+**产物 ④：R005 加「攻击面证据门槛」**（`rules/R005_eol_component.py`）
+
+- 厂商公告带 `_trigger_condition`（如 Discuz!「默认不触发，需管理员保存 UCenter 设置」）
+  → **版本命中不足以支撑发现**，必须再取攻击面证据
+- `_attack_surface(ctx)` 从 `ctx.shared` 复用上游事实，**0 额外请求**：
+  `admin_no_captcha`(R004) / `bypass_cookie`(R002) / `admin_exposed`(R004) / `plaintext_ok`(R003)
+- 缺攻击面证据且在 `MAX_DEFERRED = 3` 内 → **不产发现，改产 `needs_follow_up`**，
+  gap 里写清触发条件与补证方式。无 `_trigger_condition` 的组件，版本取证即主要证据
+- 发现项 evidence 新增 `attack_surface`；note 改为落实测事实
+- **编排顺序即检测能力**：`ORDER` 调成 `R006 R001 R002 R003 R004 R013 R005 …` ——
+  **R004 必须早于 R005**，否则 R005 看不到 `admin_no_captcha`，会把高危降级成待跟进
+- 靶场改造：`_test_service_version_lab.py` 新增 `P_DISCUZ_FULL` / `site_discuz_full`；
+  ① 改为**反证**（缺攻击面证据 → 不产发现、改产待跟进），①b 补攻击面证据 → R005 才产出 7.4
+
+**产物 ⑤：R012 吸收 idor-05** —— 空数组 / null 改用 `outcome="no_issue_found"` + evidence：
+**空容器是「静默强制」而非暴露，但也不等于「已证明安全」**。
+
+**靶场**：`_test_fp_lab.py` 40 条（知识库完整性 + fp_review 命中/不误报 +
+EL035/EL036 门禁反证 + 渲染 + 离线保证）。
+**全量回归 11 个靶场 493 条全绿**。
+
+## 十四、提交记录
 
 fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）
