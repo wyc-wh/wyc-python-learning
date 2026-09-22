@@ -2,18 +2,17 @@
 
 ## 一、平台骨架
 
-- `pentest-orchestrator/`：`orchestrator.py`(CLI) / `rules_engine.py` / `rules/` / `scanners.py`(nmap+nuclei) / `cvss.py` / `exploit.py`(人工确认制) / `manual_probe.py` / `coverage.py` / `evidence_lint.py` / `webui.py`
+- `pentest-orchestrator/`：`orchestrator.py`(CLI) / `rules_engine.py` / `rules/` / `scanners.py`(nmap+nuclei) / `cvss.py` / `exploit.py`(人工确认制) / `manual_probe.py` / `coverage.py` / `evidence_lint.py` / `credentials.py`
 - 子命令：`init plan autorun engage verify report status check lint submit coverage`
-- 合规闸：授权确认 + 范围校验 + `auth.json`(4 项校验) + append-only JSONL 审计 + 破坏性阶段禁用 + `allow_scanner=false` 硬开关
+- 合规闸：授权确认 + 范围校验 + `auth.json`(4 项校验) + append-only 审计 + 破坏性阶段禁用 + `allow_scanner=false` 硬开关
 - 置信度三级：`detected 🔍`→`confirmed ✅`→`exploited 💥`。**`detected` 不得提交 SRC**
 - **回放**：`rate_findings` 重算会重置置信度 → `generate_report` 必须回放 `session["verifications"]`
-- CVSS：`compute_cvss31(av,ac,pr,ui,s,c,i,a)` / `compute_cvss40(av,ac,at,pr,ui,vc,vi,va,sc,si,sa)`。**4.0 的 UI 只有 N/A/P，3.1 `UI:R` 对应 4.0 `UI:P`**，传 R 抛异常。一律用引擎算
-- 工具：nmap 7.92 / nuclei v3.11.1(模板 13742) / ffuf / gobuster / feroxbuster / subfinder / amass / httpx / sqlmap / wafw00f。缺 nikto/whatweb/hydra/john
+- CVSS：`compute_cvss31(av,ac,pr,ui,s,c,i,a)` / `compute_cvss40(av,ac,at,pr,ui,vc,vi,va,sc,si,sa)`。**4.0 的 UI 只有 N/A/P，3.1 `UI:R` 对应 `UI:P`**，传 R 抛异常。一律用引擎算
+- 工具：nmap 7.92 / nuclei v3.11.1 / ffuf / gobuster / feroxbuster / subfinder / amass / httpx / sqlmap / wafw00f。缺 nikto/whatweb/hydra/john
 
 ### 通用工程坑
 - **nuclei 必须 `-no-interactsh`**：约 710 模板回连 oast.*，被网关 SIGTERM 掐断（零输出无提示）
 - **去重两层**：解析层 `(template_id,matched_at)` + 评级层 `(类别,归一化位置)`；`type=generic` 视为未知类别
-- `lines.append(*list)` 错 → `extend`
 - **「工具没装」先怀疑调用侧**：中文 Windows `encoding="utf-8"` 丢输出；`split()` 用在端口列表会让 nmap 把端口串当主机名卡满超时。**耗时恰为超时整数倍 = 参数拼错；秒返空 = 编码问题**
 - Go 版本号先剥 ANSI 色码；`python -m <pkg>` 不万能；`_find_exe` 要认 `.bat/.cmd/.py`
 
@@ -65,17 +64,17 @@
 
 - **不是扫描器**：不发 payload/不遍历/不并发/只 GET/HEAD → **不受 allow_scanner 闸约束**，但强制范围校验 + 限速 ≥6s + 请求预算 + 审计链
 - **置信度恒为 detected**，绝不自动 confirmed；**排除必产 negative**（证明核查过）；预算耗尽标 `unfinished`
-- R001 安全头占位符 / R002 客户端绕过 / R003 明文+Cookie / R004 后台入口 / R005 版本命中公告 / R006 catch-all 基线(抑制器) / R007 零破坏写探测(默认关) / R008 敏感文件 / R009 框架指纹
+- R001 安全头占位符 / R002 客户端绕过 / R003 明文+Cookie / R004 后台入口 / R005 版本命中公告 / R006 catch-all 基线(抑制器) / R007 零破坏写探测(默认关) / R008 敏感文件 / R009 框架指纹 / **R010 凭据有效性(测试基建)** / **R011 双态鉴权差异**
 - **关联分析比单条重要**：COR-T01(R001∧R003)=6.8；COR-A01(R004∧R005)=7.4。用 `supersedes` 避免重复提交
 - 实战自动复现人工发现：bbs.ikuai8 → F-10(7.4)/F-05(6.5)；qmt.jiaoyu → J-01(6.8)
 
 ### 实现要点（复用时避开）
-- **缓存 key 必须含请求头**：只按 (method,url) 会吞掉 R002「同 URL 带伪造 Cookie」的第二次请求（漏报不报错）
+- **缓存 key 必须含请求头**：只按 (method,url) 会吞掉 R002「同 URL 带伪造 Cookie」的第二次请求（漏报不报错）。也因此登录态/匿名态天然隔离
 - **`OpenerDirector.open()` 不接受 `context=`**：关 TLS 校验要 `build_opener(HTTPSHandler(context=ctx))`
 - **`Powered by <a>X 3.3</a>` 正则里 `<...>` 必须整体可选** `(?:<[^>]*)?`
-- **首页可能是拦截页**：版本在「绕过后的页面」→ R005 复用 R002 缓存（0 额外请求）
+- **首页可能是拦截页**：版本在「绕过后的页面」→ 复用 R002 缓存（0 额外请求）
 - **根路径跳 HTTPS ≠ 后台也跳**：R003 需对后台入口二段复检
-- **靶场用协议嗅探单端口同时服务 HTTP/HTTPS**（首字节 0x16 = TLS ClientHello）；**必须 `verify_tls=False`**，否则表现为「指纹未命中」而非报错 —— `status=None/bytes=0` 就是 TLS 问题的指纹
+- **靶场用协议嗅探单端口同时服务 HTTP/HTTPS**（首字节 0x16 = TLS ClientHello）
 
 ## 六、完整链路（P0）
 
@@ -86,8 +85,7 @@
 - `check --import-file` 零请求导入既有证据；report/verify/submit 均支持 `--session`
 
 ### 措辞铁律（会直接印进报告和提交稿）
-- **规则名/发现名不写主观词**：「不跳转」→ 改；「返回完整内容」→ 实测字节数 `{bytes}B`
-  通则：**能被机器验证的写事实，不能验证的别写形容词**
+- **规则名/发现名不写主观词**：「不跳转」→ 改；「返回完整内容」→ 实测字节数 `{bytes}B`。**能被机器验证的写事实，不能验证的别写形容词**
 - 提交稿「影响分析」由 CVSS 向量推出「利用前提」(AV/AC/PR/UI/S) +「安全影响」(C/I/A)，不写套话
 
 ## 七、证据完整性铁律（两次翻车换来）
@@ -169,29 +167,56 @@ bbs.ikuai8 → Discuz!(body,high)；qmt.jiaoyu → Laravel(cookie,medium)。
 `gain = (1 - score) × weight × 100` 降序输出。量化不只是给分数，而是让「下一步先做什么」可计算。
 实测教训：直觉以为「1/3 资产」比「1/8 规则」缺口大，实际规则收益 21.9 > 资产 20.0 —— **边际收益必须算，不能猜**。
 
-## 十一、测试基建铁律
+## 十一、登录态建模（P4）
+
+`credentials.py` + R010/R011 + stacks.json 的 auth_paths。靶场 `_test_authz_lab.py` 44 条。
+
+**存在理由**：匿名态下 coverage 的 auth 因子是 0.5，所有需登录的功能点/越权/业务逻辑不可见。有测试账号则 ceiling 翻倍（20% → 40%）。
+
+### 凭据值零落盘（最硬的边界）
+证据 JSON / 审计链 / 会话文件 / 报告里**只有 fingerprint 与 cookie 名**。
+`Identity.as_dict()` 是唯一落盘出口，结构上不含值。请求流水记 `anon|<指纹>`。
+凭据文件已进 .gitignore。**不提供「用账号密码自动登录」** —— 必触验证码/短信接口（触发即发真实短信），且易滑向口令爆破，两条都是红线。
+
+### R010 为什么必须先于 R011
+凭据无效时，R011 的双态对比会得出**假的阴性结论**（两态一致 → 判无差异 → 漏报），而不是如实说「没法判断」。所以必须先证明 Cookie 真的生效。
+两种判据：①响应差异 ②**Set-Cookie 差异**（更硬，不可省）。
+②不可省的理由：很多站首页对匿名和登录返回同一份内容，只靠①会把这类站全判 inconclusive，而它们恰恰可能藏着最严重的鉴权缺失。**不能因为怀疑自己的凭据就漏报。**
+
+### R011 三重假阳性抑制
+catch-all 兜底 / 登录页错误页 / **首页 `/` 排除**（公开首页两态一致是正常设计，不排除就是每站一条假阳性）。
+凭据 invalid/inconclusive 时**拒绝下结论**：「两态一致只说明未测出差异，不等于鉴权缺失」。
+
+### 三个真 bug（复用时避开）
+1. **登录页正则别写 `Log\s*in`** —— 未登录站点首页必然有 `/login` 链接，连写的 "login" 会被匹配成登录页 → 几乎所有站点被误判「已被踢回登录页」。只认 password 输入框、明确中文短语、带空格的 Sign in / Log in
+2. **请求失败 ≠ 两态不同** —— TLS/连接失败时 sha256 为空，`a==b` 判据失效，会凭空造出「凭据生效」的假成功结论。必须有 failed 判定
+3. **别用字节数阈值判空壳** —— `bytes<200` 把 103B 的真实页面也滤掉了。用 `base.looks_like_content()`（64B + 非错误页/登录页）
+
+## 十二、测试基建铁律
 
 1. **会写真实配置文件的测试，先备份再还原**（`_test_authgate.py` 曾删掉真实 auth.json）
 2. **合规闸统一 rc=2 + 显式写 stderr**
 3. **Windows 不能用 SO_REUSEADDR 探测端口**（允许重复绑定）
 4. **测试必须环境隔离**：`PENTEST_AUTH` / `PENTEST_SESSIONS` + `tempfile.mkdtemp()`
-5. **靶场红时先分辨「被测数据脏」还是「代码错」** —— P3 首跑 6 红，4 条是我构造的数据不合格（baseline 空/R009 无 url/规则跑过却没 negative），lint 抓的是真问题，别急着改断言迁就
+5. **靶场红时先分辨「被测数据脏」还是「代码错」** —— P3 首跑 6 红，4 条是我构造的数据不合格；P4 首跑 6 红，2 条是靶场 cookie 名写错。**别急着改断言迁就**
+6. **靶场必须自检 `status=None`**：忘了 `verify_tls=False` 会让 HTTPS 全失败，但表现是「站点没内容」而非「请求失败」，测试**假通过**。这个坑 P2 踩过、P4 又踩
+7. **规则数量别硬编码在测试里**：新增规则后不该是 coverage 的错，从 `rules.load_rules()` 动态取
 
-## 十二、环境
+## 十三、环境
 
-- git 不在 PATH：`C:/Users/wd/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe`；`.gitignore` 排除 tools/、.sessions/、_lab/
+- git 不在 PATH：`C:/Users/wd/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe`；`.gitignore` 排除 tools/、.sessions/、_lab/、凭据文件
 - `git ls-files` 非 ASCII 转八进制 → 用 `-z` + escape_decode；中文名 ENOSYS → `--ignore-errors`
 - 沙箱 bash 缺 grep/tail/ls，用 python 替代；`dangerouslyDisableSandbox` 后 HTTPS 出网可用
 - Windows nmap 无 Npcap 时 `-sV` 挂起 → 降级 `-sT`
-- **图表导出**：`show_widget` 用 CSS 变量，脱离宿主不显示。出附件要单独写 SVG 写死颜色（浅色 #F1EFE8 底/#D3D1C7 边/#2C2C2A 字，危险 #FCEBEB/#A32D2D），转 PNG 用 Edge headless（`--headless=new --force-device-scale-factor=2 --window-size=680,368 --screenshot=out.png in.svg`）；校验尺寸用 `struct.unpack('>II', d[16:24])`（PIL 未装）
+- **图表导出**：`show_widget` 用 CSS 变量，脱离宿主不显示。出附件要单独写 SVG 写死颜色（浅色 #F1EFE8 底/#D3D1C7 边/#2C2C2A 字，危险 #FCEBEB/#A32D2D），转 PNG 用 Edge headless；校验尺寸用 `struct.unpack('>II', d[16:24])`（PIL 未装）
 - **bash 里别用反引号写中文块**：会被当命令替换吃掉（曾损坏 MEMORY.md）。长文本用 Write 写文件再追加
 
-## 十三、PentAGI 评估结论（勿重复评估）
+## 十四、PentAGI 评估结论（勿重复评估）
 
 `D:\gihub\pentagi-main`（MIT，Go+Docker 12 服务）。**只借鉴方法论，不集成架构** —— Go/Python 不兼容、过度工程、其「Never request permission」与人工确认制对撞、全攻击链自动化对 SRC 是合规风险。
 已借鉴落地：置信度三级 / 覆盖度评估 / 脱敏规范 / CLI 反幻觉协议。
 
-## 十四、已完成项目（勿重复开挖）
+## 十五、已完成项目（勿重复开挖）
 
 - **ikuai8.com**：F-10 高危（Discuz! X3.3 EOL + 登录失败计数失效，7.4/7.7）
-- **jiaoyu.cn**：J-01 中危（qmt 安全头占位符失效，6.8/6.4）。**该站鉴权扎实，未挖到高危**；登录态因无账号未覆盖
+- **jiaoyu.cn**：J-01 中危（qmt 安全头占位符失效，6.8/6.4）。**该站鉴权扎实，未挖到高危**；登录态因无账号未覆盖 —— P4 落地后，若有测试账号可直接重跑 R010/R011
