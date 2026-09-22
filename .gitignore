@@ -20,3 +20,10 @@ desktop.ini
 # 本地备份
 *.real.bak
 *.bak
+
+# 登录态凭据（P4）—— 含真实会话 Cookie，绝不可入库
+cred*.json
+cred*.txt
+*.cred
+.cred*
+pentest-orchestrator/_cred*
