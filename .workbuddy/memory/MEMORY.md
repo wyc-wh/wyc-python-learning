@@ -224,3 +224,11 @@
    → 直接排除 CVE-2026-25161，别硬套 CVE）
 5. **验证码存在性 = 弱口令可行性判据**：页面搜 seccode/验证码/captcha/AliyunCaptcha.js，
    全 0 才说明可爆破；有验证码就别碰（icc 有阿里云验证码 → 判定不可行）
+
+## 图表导出为本机可用的 PNG（2026-09-22）
+
+`show_widget` 出的图用 CSS 变量，**离开宿主环境不显示**。要出提交附件时：
+1. 单独写 SVG，颜色写死（浅色：#F1EFE8 底 / #D3D1C7 边 / #2C2C2A 主文字；危险项 #FCEBEB/#A32D2D/#791F1F）
+2. 转 PNG 用 Edge headless（本机无 Chrome，只有 x86 msedge）：
+   `msedge.exe --headless=new --disable-gpu --no-sandbox --hide-scrollbars --force-device-scale-factor=2 --window-size=680,368 --screenshot=out.png in.svg`
+3. 校验尺寸用 `struct.unpack('>II', d[16:24])`（别用 PIL，未装）
