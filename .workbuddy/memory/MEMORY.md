@@ -69,6 +69,14 @@ R001 安全头占位符 / R002 客户端绕过 / R003 明文+Cookie / R004 后�
 - **R012（无账号打访问控制）**：从站点自身公开的 JS bundle 提路径（不遍历不猜），
   匿名 GET 返回 200 + JSON + 有业务字段 → 未授权访问。敏感路径 7.5 / 其余 5.3。
   硬前提：**bundle 必须匿名可达** —— 前端在认证墙后的站（如 jiaoyu）结构性失效
+- **R013（R005 的原料供给者）**：104 条版本正则从**响应头+正文**提「产品+版本」→
+  写 `ctx.shared["service_versions"]` → R005 比对公告。**自身只产排除项不产 finding**
+  —— 版本暴露按 CVSS 算确实是 5.3，但公益 SRC 不单独收，每站一条会淹掉报告。
+  两个知识源互补：`service_versions.json`（服务端/中间件，源自 Burp 规则集）
+  + `vuln_components.json` 的 version_regex（国产 CMS）
+  - **关键区分**：「未提取到版本」可能是 ①没暴露 ②需登录 ③**被 WAF/CDN 改写了
+    Server 头**。实测 qmt=`ZS-Proxy21/v201`、ikuai8=`Tengine`+`Ali-Swift/EagleId`。
+    措辞必须区分这三者，否则覆盖度结论是假的
 - **证据只存结构不存值（隐私铁律）**：API 响应可能含个人信息。只记字段名、条数、
   sha256、content_type，**绝不记录返回值**。确认时自行 curl 看，别把数据贴进报告
 
@@ -78,6 +86,9 @@ R001 安全头占位符 / R002 客户端绕过 / R003 明文+Cookie / R004 后�
 - **`Powered by <a>X 3.3</a>` 正则里 `<...>` 必须整体可选** `(?:<[^>]*)?`
 - **根路径跳 HTTPS ≠ 后台也跳**：R003 需对后台入口二段复检
 - **靶场用协议嗅探单端口同时服务 HTTP/HTTPS**（首字节 0x16 = TLS ClientHello）
+- **靶场的 openssl 依赖 PATH，环境一变就崩在起步阶段**（证书生成在 serve_forever
+  之前，终端只显示空输出，极易误判成「规则改坏了」）。已抽 `_lab_cert.py`
+  自动定位 PortableGit 自带的 openssl.exe。**四个靶场共用一个入口，改一处即可**
 
 ## 六、链路（P0）
 
@@ -165,13 +176,37 @@ R001 安全头占位符 / R002 客户端绕过 / R003 明文+Cookie / R004 后�
 - 沙箱 bash 缺 grep/tail/ls，用 python；`dangerouslyDisableSandbox` 后 HTTPS 出网可用
 - Windows nmap 无 Npcap 时 `-sV` 挂起 → 降级 `-sT`
 - **图表导出**：`show_widget` 用 CSS 变量，脱离宿主不显示。出附件单独写 SVG 写死颜色（浅色 #F1EFE8 底/#D3D1C7 边/#2C2C2A 字，危险 #FCEBEB/#A32D2D），转 PNG 用 Edge headless；校验尺寸 `struct.unpack('>II', d[16:24])`
-- **bash 里别用反引号写中文块**（被当命令替换吃掉，曾损坏 MEMORY.md）。长文本用 Write 写文件
+- **禁止用 `python -c` / bash 内联写含反引号的中文长文本** —— 反引号会被 bash
+  当命令替换执行，内容被静默挖空（踩过**两次**，2026-09-22 又损坏了一次今日日志）。
+  长中文文本一律用 Write 工具写 .py 脚本文件再执行
 
 ## 十四、PentAGI 评估结论（勿重复评估）
 
 `D:\gihub\pentagi-main`（MIT，Go+Docker 12 服务）。**只借鉴方法论，不集成架构** —— Go/Python 不兼容、过度工程、其「Never request permission」与人工确认制对撞、全攻击链自动化对 SRC 是合规风险。已借鉴：置信度三级 / 覆盖度 / 脱敏 / CLI 反幻觉协议。
 
-## 十五、项目台账
+## 十五、字典库评估结论（2026-09-22，勿重复评估）
+
+`D:\gihub\Dictionary-Of-Pentesting-master`（913MB / 4991 文件）。**只能「抽取式集成」，
+不整体引入**。关键判断：**99.96% 是给扫描器/爆破器用的**（口令、用户名字典、御剑/
+DirBuster 目录爆破、xxe/top25 参数 fuzz、2M 子域字典、UA 池）→ 全部踩补天红线，
+禁用。真正能用的约 400KB：
+
+| 可集成 | 对接 | 补什么缺口 |
+|---|---|---|
+| `CMS/Burp_Software-version-checks/match-rules.tab` 113 条 regex→产品+版本 | R009/R005 | **版本自动提取**（R005 一直靠 meta generator 人工取版本，这是瓶颈） |
+| 敏感路径分类库（actuator 35/swagger 54/graphql 12/k8s 57/juicy 50/leaky-misconfigs 461） | R008 | 现在 CANDIDATES 只有 5 条硬编码。**必须按栈定向取 ≤8 条，禁全库遍历** |
+| `HTTP/errors.txt` 97 条错误串 | 假阳性抑制 | 治第三次翻车（WAF 拦截页/站点 404 页骗过判据） |
+| `Regex/api_key.txt`+`HTTP/secret-keywords.txt` 104 条 | R008 内容匹配 | 密钥/AK/SK/JWT 泄露识别。**只存命中类型，禁存值** |
+| `Subdomain/cdn_waf_server.txt` 347 条后缀（低优先） | 新能力 | 判断目标是否前置 WAF → 状态码判据被污染时自动降级结论 |
+
+边际价值排序：**版本正则 > 错误页特征 > 密钥正则 > 路径库（nuclei 13742 模板已有类似内容，边际低）**。
+
+**执行进度（2026-09-22）**：P0 已完成 —— 版本正则落地为 R013
+（`service_versions.json` 104 条 + `rules/R013_service_version_extract.py`），
+并顺带做了第 5 项的前半（前置 WAF/CDN 识别，写进 R013 排除项措辞）。
+**P1 未做**：错误页特征 97 条（假阳性抑制）、密钥正则 104 条（R008 内容匹配）。
+
+## 十六、项目台账
 
 - **ikuai8.com**：F-10 高危（Discuz! X3.3 EOL + 登录失败计数失效 7.4/7.7）、F-05(6.5)。
   2026-09-22 用 R012 对 8 个 in_scope 资产试跑：未命中未授权访问，但 `demo.ikuai8.com`
