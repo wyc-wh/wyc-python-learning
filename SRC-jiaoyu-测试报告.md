@@ -23,7 +23,7 @@
 | **主提交项** | **J-01：`qmt.jiaoyu.cn` 传输层与会话保护不足** |
 | 等级 | **中危**（CVSS 3.1 **6.8** / CVSS 4.0 **6.4**） |
 | 置信度 | **confirmed ✅**（实测响应头原始取证） |
-| 一句话 | 四个安全响应头被配置成**字面量 `value`**（模板占位符未替换）→ HSTS/Referrer-Policy/X-Download-Options/X-Permitted-Cross-Domain-Policies **全部失效**；且明文 HTTP 200 直出不跳转、会话 Cookie 缺 `Secure` 且 `SameSite=None` |
+| 一句话 | 四个安全响应头被配置成**字面量 `value`**（模板占位符未替换）→ HSTS/Referrer-Policy/X-Download-Options/X-Permitted-Cross-Domain-Policies **全部失效**；且明文 HTTP 可达（实测 301 跳转，但跳转前明文请求可被截获）、会话 Cookie 缺 `Secure` 且 `SameSite=None` |
 | 提交稿 | 见 **§7.3**，可直接复制 |
 | 还缺什么 | 官方模板第 **3/5** 项（首页截图含地址栏 / 爱站权重）。**第 2 项归属证明我已用命令行取到**（§7.2） |
 
@@ -152,6 +152,17 @@
 
 **CVSS 3.1 = 6.8**　|　**CVSS 4.0 = 6.4**　|　CWE-16（配置错误）、CWE-319（明文传输）、CWE-614（Cookie 缺 Secure）
 
+> **⚠️ 2026-09-22 更正**：本节原写「明文 HTTP **200 直出不跳转**」，经规则引擎
+> （`--no-redirect` 实测）复核，真实结果为 **`http://qmt.jiaoyu.cn/` → 301 → HTTPS**。
+> 根因是当时的 `manual_probe.py` 使用 `urllib` 默认行为**自动跟随重定向**，
+> 把 301 跟随成落地页的 200。该缺陷已在脚本中修复。
+>
+> **定级是否变化**：**6.8 维持不变**，但论证必须改口径 ——
+> 跳转由**服务端返回**，未缓存 HSTS 的客户端发出的第一次明文请求本身已走明文链路，
+> 中间人可在跳转发生前截获该请求；而缺 `Secure` 的 `laravel_session` 已随请求发出。
+> **提交稿中不得再写「明文返回完整页面不跳转」，否则厂商一验即驳。**
+
+
 #### 漏洞位置
 
 ```
@@ -199,7 +210,7 @@ Set-Cookie: laravel_session=...; HttpOnly; SameSite=None   ← ❌ 缺 Secure
 | `X-Download-Options` | `noopen` | **无效**，IE 下载文件可直接打开 |
 | `X-Permitted-Cross-Domain-Policies` | `none` | **无效**，Adobe 跨域策略不限制 |
 
-**步骤 2 —— 明文 HTTP 可达且不跳转（HSTS 失效的直接后果）**
+**步骤 2 —— 明文 HTTP 可达（实测 301 跳转，但跳转由服务端返回，中间人可在跳转前截获）**
 
 ```bash
 curl -sI http://qmt.jiaoyu.cn/
@@ -236,7 +247,7 @@ Set-Cookie: laravel_session=<value>; path=/; HttpOnly; SameSite=None
 #### 为什么单列 J-02 只有 3.1 分
 
 「响应头缺失/失效」单独评分仅 **3.1（低危）**。本条之所以达到中危，
-是因为 **HSTS 失效 + 明文 HTTP 不跳转 + 会话 Cookie 缺 Secure** 三者构成完整利用链。
+是因为 **HSTS 失效 + 明文可达（跳转前可被截获）+ 会话 Cookie 缺 Secure** 三者构成完整利用链（**注意**：明文实测为 301 跳转而非 200 直出，论证口径见本节开头更正说明）。
 **提交时必须三合一论证**，拆开报会被判「影响不大」。
 
 #### 修复建议（P1）
@@ -448,7 +459,7 @@ APP_DEBUG=false
 | 1 | **漏洞 URL** | `https://qmt.jiaoyu.cn/` | ✅ |
 | 2 | **归属证明** | **已命令行取证**：版权所有「北京中教互联教育科技有限公司」+ 京ICP证140769号 + 京ICP备2022007846号-1（§1.2） | ✅ **已备** |
 | 3 | **首页截图（含地址栏）** | 需浏览器访问 `https://qmt.jiaoyu.cn/` 的完整截图 | ⚠️ **须自行补** |
-| 4 | **漏洞证明** | 原始响应头（四个 `value` 占位符）+ 明文 HTTP 200 证据 | ✅ |
+| 4 | **漏洞证明** | 原始响应头（四个 `value` 占位符）+ 明文 HTTP 301 跳转证据 + 会话 Cookie 缺 Secure | ✅ |
 | 5 | **权重选择** | 按 `jiaoyu.cn` 在爱站（aizhan.com）的权重勾选 | ⚠️ **须自行补** |
 | 6 | 活动/任务选择 | 若在活动期内需先报名 | ⚠️ 视情况 |
 
@@ -487,7 +498,7 @@ ICP 备  ：京ICP备2022007846号-1
 X-Permitted-Cross-Domain-Policies、X-Download-Options 四项的值被配置为
 字面量字符串 "value"（模板占位符未替换），浏览器按无效指令忽略，
 导致 HSTS 等防护全部失效。同时：
- 1. 明文 HTTP（http://qmt.jiaoyu.cn/）返回 200 完整页面且不跳转 HTTPS；
+ 1. 明文 HTTP（http://qmt.jiaoyu.cn/）实测返回 **301 跳转** HTTPS —— 但跳转由服务端返回，未缓存 HSTS 的客户端的首次明文请求已暴露（2026-09-22 更正）；
  2. 会话 Cookie laravel_session 未设置 Secure 属性，且 SameSite=None。
 三者叠加，攻击者处于中间人位置时可直接截获会话凭据。
 
@@ -501,7 +512,7 @@ X-Permitted-Cross-Domain-Policies、X-Download-Options 四项的值被配置为
    以及 Set-Cookie: laravel_session=...; HttpOnly; SameSite=None（无 Secure）
 2. curl -sI http://qmt.jiaoyu.cn/
    观察到 HTTP 200、无 Location 跳转、HSTS 仍为无效的 "value"
-3. 综合：HSTS 失效 + 明文可达 + Cookie 无 Secure = 会话可被中间人截获
+3. 综合：HSTS 失效 + 明文可达（跳转前可截获）+ Cookie 无 Secure = 会话可被中间人截获
 
 【影响分析】
 laravel_session 为后台管理系统会话凭据。攻击者在公共网络、企业内网或
@@ -528,7 +539,7 @@ Cookie，当前配置亦存在 Cookie 无法写入的功能性隐患。
 但本条的特点是：
 
 - ✅ 有**可复现的原始响应头证据**（占位符 `value`，非常规的"缺失"）
-- ✅ 构成**完整利用链**（HSTS 失效 + 明文可达 + Cookie 缺 Secure）而非单点建议
+- ✅ 构成**完整利用链**（HSTS 失效 + 明文可达 + Cookie 缺 Secure）而非单点建议（明文形态为 301 跳转，非 200 直出 —— 口径见 J-01 更正说明）
 - ✅ 附带一个**功能性隐患**（Cookie 可能被浏览器拒绝写入）
 
 > **提交前建议**：先去 `butian.net/Help/plan` 核对「安全配置错误 / 传输层保护不足」

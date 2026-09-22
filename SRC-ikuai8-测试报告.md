@@ -29,8 +29,10 @@
 | 提交稿 | 见 **§9.4**，可直接复制粘贴 |
 | 还缺什么 | 官方模板第 **3/5** 项（首页截图含地址栏 / 爱站权重）。**第 2 项归属证明已由本报告取证完成**（论坛页脚 `京ICP备13042604号` · `iKuai Inc.`），只需你截图即可 |
 
-**另外 10 条**：F-05 中危（**作为 F-10 的支撑证据一并提交，不单独提交**）、F-01 中危（备选）、
-F-02/F-06/F-11 低危、F-03/F-07/F-08/F-09 信息（不提交）、F-04 内网域暴露（**企业自查项，绝不提交**）。
+**另外 10 条**：F-05 中危（**作为 F-10 的支撑证据一并提交，不单独提交**）、
+F-01 **低危**（2026-09-22 更正降级，不单独提交）、F-02 低危、**F-06 / F-11 已撤回**（明文实测 301 跳转，
+原「200 不跳转」为探测脚本跟随重定向所致）、F-03/F-07/F-08/F-09 信息（不提交）、
+F-04 内网域暴露（**企业自查项，绝不提交**）。
 
 > **关于截图里的「弱口令」**：完全对上了 —— 只是不在官网静态站，而在 `bbs.ikuai8.com`。
 > `icc` 有阿里云验证码（防护到位、不可行）；`bbs` **三层防护全缺 + 版本命中官方高危公告**；
@@ -250,12 +252,29 @@ Title: 爱快 iKuai-商业场景网络解决方案提供商
 <a id="5"></a>
 ## 5. 发现的问题（按风险等级）
 
-### 🟡 中危 F-01：明文 HTTP 可达且未跳转 HTTPS，会话 Cookie 未设置 `Secure` 属性
+### ⚪ F-01【2026-09-22 更正 · 中危 → 低危 · 不再单独提交】：会话 Cookie 未设置 `Secure` 属性
 
-- **置信度**：`confirmed ✅`（响应头实测，非扫描器推断）
-- **CVSS 3.1**：**5.3**（AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N）
-- **CVSS 4.0**：**4.8**（AV:N/AC:H/AT:N/PR:N/UI:P/VC:H/VI:N/VA:N/SC:N/SI:N/SA:N）
-- **位置**：`http://www.ikuai8.com/`（任意路径）
+> **⚠️ 更正说明（务必先读）**
+> 原报告记录「明文 HTTP 200 且不跳转」是**错的**。2026-09-22 用规则引擎复核
+> （`--no-redirect` 方式实测，不跟随 30x）得到真实结果：
+>
+> ```http
+> GET http://www.ikuai8.com/  → 301  Location: https://www.ikuai8.com/
+> GET http://qmt.jiaoyu.cn/   → 301  Location: https://qmt.jiaoyu.cn/
+> ```
+>
+> **根因**：当时的 `manual_probe.py` 使用 `urllib` 默认行为**自动跟随重定向**，
+> 于是 301 被跟随成落地页的 200，脚本把它记成「明文可达、不跳转」。
+> 该缺陷已在 `manual_probe.py` 中修复（新增 `follow_redirect` 参数，判断跳转行为时禁用跟随），
+> 规则引擎的 `ProbeContext` 从一开始就强制 `_NoRedirect`。
+>
+> **影响范围**：本条 F-01 的「明文不跳转」不成立，连带 F-06、F-11 的同一论据也均不成立。
+> **F-10（主提交项）不受影响** —— 它的定级来自 Discuz! 官方公告 + 验证码/人机验证缺失，
+> 与明文传输无关；只是要去掉 F-11 这一条加重情节。
+
+- **更正后置信度**：`confirmed ✅`（Cookie 属性为响应头实测）
+- **更正后 CVSS 3.1**：**3.1**（AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:N/A:N）
+- **位置**：`https://www.ikuai8.com/`
 
 **复现步骤**
 
@@ -267,21 +286,30 @@ Host: www.ikuai8.com
 User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
 ```
 
-2. 观察响应（**无 `Location` 跳转头，直接 200 返回完整页面**）：
+2. 观察响应（**更正后实测：301 跳转 HTTPS，并非 200 直出**）：
+
+```http
+HTTP/1.1 301 Moved Permanently      ← 更正：原报告记为「200 OK」系跟随重定向所致
+Location: https://www.ikuai8.com/
+Server: Tengine
+```
+
+2b. HTTPS 侧响应头中确认 Cookie 缺 `Secure`：
 
 ```http
 HTTP/1.1 200 OK
 Server: Tengine
-Content-Type: text/html; charset=utf-8
-Set-Cookie: f2224fa1096458bc94e7e6ef9dc9833a=pim154e36ho9ji0tnk6chr2bsi; path=/; HttpOnly
+Set-Cookie: acw_tc=74fd1d1a...;path=/;HttpOnly;Max-Age=1800          ← 缺 Secure
+Set-Cookie: f2224fa1096458bc94e7e6ef9dc9833a=...; path=/; HttpOnly   ← 缺 Secure
 ```
 
-3. 对比 HTTPS 响应头，确认 `Strict-Transport-Security` **缺失**（因此浏览器不会自动升级为 HTTPS，用户首次访问/手动输入域名时仍走明文）。
+3. 对比 HTTPS 响应头，确认 `Strict-Transport-Security` **缺失**（因此浏览器不会主动把 `http://` 升级为 HTTPS —— 用户首次访问、手动输入域名、或点击站外 `http://` 链接时，仍会先发出一次明文请求）。
 
 **影响分析**
 
-- 站点在 80 端口明文可达且不重定向，攻击者处于同一网络（公共 Wi-Fi、运营商链路、企业旁路）时可实施中间人劫持；
-- 会话 Cookie 仅有 `HttpOnly`，**缺 `Secure`**，因此会随明文 HTTP 请求直接以裸文本传输，可被旁路嗅探窃取；
+- **（更正）** 站点 80 端口**确已 301 跳转 HTTPS**，不再返回业务内容。但跳转由**服务端返回**：
+  在未缓存 HSTS 的客户端上，用户发出的第一次明文请求本身已经走明文链路，中间人可在跳转
+  发生前截获该请求 —— 此时缺 `Secure` 的 Cookie 已随请求发出；
 - 缺 `SameSite` 属性，存在 CSRF 利用面（需结合具体业务动作）；
 - 无 HSTS，无法通过浏览器侧强制 HTTPS 来缓解。
 - **危害限定**：本站为静态展示站，未见登录入口，该 Cookie 推测为 CDN/WAF 会话标识而非身份凭据，故**机密性影响按"高"估、实际身份冒用风险取决于该 Cookie 是否承载登录态**，需厂商确认。
@@ -424,7 +452,11 @@ function verify() {
 
 ---
 
-#### 🔵 低危 F-06：明文 HTTP 在 4 个业务系统上均可达且不跳转 HTTPS
+#### ⛔ F-06【2026-09-22 撤回】：~~明文 HTTP 在 4 个业务系统上均可达且不跳转 HTTPS~~
+
+> **撤回理由**：复核实测 `http://bbs.ikuai8.com/` → **301** 跳转 HTTPS；
+> `http://www.ikuai8.com/` 同样 301。原结论「200 不跳转」系探测脚本跟随重定向所致。
+> 该条目**不得出现在任何提交稿中**。全站 80 端口跳转的加固建议本身仍然有效（见第 8 章）。
 
 | 资产 | `http://` 状态码 | 与 HTTPS 响应体是否一致 | HSTS |
 |---|---|---|---|
@@ -544,7 +576,7 @@ GET https://bbs.ikuai8.com/admin.php
 | **人机验证（前台）** | ❌ **可被一条 Cookie 头绕过** | 见 F-05：`Cookie: human_verified=true` → 2174 B 验证页变为 42600 B 真实论坛 |
 | **人机验证（后台）** | ❌ **根本不覆盖** | `admin.php` 在**不带任何 Cookie** 时即返回 200 / 2769 B /「登录管理中心」，验证页不生效 |
 | **失败锁定 / 频率限制** | ❌ **按官方公告处于失效状态** | 版本命中公告受影响范围 |
-| **传输加密** | ❌ **明文可达** | 见 F-11：`http://bbs.ikuai8.com/admin.php` → 200，完整登录页，无跳转 |
+| **传输加密** | ✅ **明文已 301 跳转**（2026-09-22 更正） | `http://bbs.ikuai8.com/admin.php` → 301 → HTTPS；~~原记 200 不跳转~~（F-11 已撤回） |
 
 ##### ④ 复现步骤（全部只读 GET，不含任何口令尝试）
 
@@ -588,7 +620,12 @@ curl -s https://bbs.ikuai8.com/admin.php | grep -o 'name="admin_[a-z]*"'
 
 ---
 
-#### 🔵 低危 F-11：`bbs.ikuai8.com/admin.php` 管理中心登录页明文 HTTP 可达且不跳转
+#### ⛔ F-11【2026-09-22 撤回】：~~`bbs.ikuai8.com/admin.php` 管理中心登录页明文 HTTP 可达且不跳转~~
+
+> **撤回理由**：复核实测 `http://bbs.ikuai8.com/admin.php` → **301** 跳转 HTTPS（无 Location 缺失问题）。
+> 原记录「200 不跳转」为探测脚本跟随重定向造成的误判。
+> **F-10 的定级不依赖本条**（其依据为 Discuz! 官方公告 + 验证码/人机验证缺失），
+> 但提交稿中必须删掉「管理入口明文」这一加重情节。
 
 | 项 | 值 |
 |---|---|
@@ -829,9 +866,9 @@ async function verify(){
 | 顺序 | 条目 | 等级 | 置信度 | 建议 |
 |---|---|---|---|---|
 | **1** | **F-10 `bbs.ikuai8.com` Discuz! X3.3（EOL）登录失败计数失效 + 三层防护全缺** | **高危 7.4 / 7.7** | **confirmed ✅** | ✅ **唯一主提交项**，见 **§9.4 提交稿 C** |
-| 1b | F-05 人机验证客户端绕过、F-11 管理入口明文 HTTP | 中危 6.5 / 低危 5.9 | confirmed ✅ | ✅ **并入 F-10 同一份提交稿作为加重情节**，不单独成单 |
-| 2 | F-01 官网明文 HTTP + Cookie 缺 Secure | 中危 5.3 | confirmed ✅ | ⚠️ 备选：先去 `butian.net/Help/plan` 核对收录范围再决定 |
-| — | F-02 响应头缺失 / F-06 业务系统明文 HTTP | 低危 | confirmed | ❌ 不单独提交 |
+| 1b | F-05 人机验证客户端绕过 | 中危 6.5 | confirmed ✅ | ✅ **并入 F-10 同一份提交稿作为加重情节**，不单独成单（~~F-11 管理入口明文~~ 已于 2026-09-22 撤回） |
+| 2 | ~~F-01 官网明文 HTTP + Cookie 缺 Secure~~ | ~~中危 5.3~~ → **低危 3.1** | confirmed ✅ | ❌ **不建议单独提交**：明文实测已 301 跳转，Cookie 为 CDN 标识（`acw_tc`）非身份凭据，2026-09-22 已更正降级 |
+| — | F-02 响应头缺失 / ~~F-06 业务系统明文 HTTP（已撤回）~~ | 低危 | confirmed | ❌ 不单独提交 |
 | — | F-03 / F-07 / F-08 / F-09 | 信息 | confirmed | ❌ 不提交 |
 | — | F-04 内网域暴露 | 信息 | confirmed | ❌ **绝不提交**（提交等于书面承认探测未授权系统），仅作企业自查 |
 
@@ -848,7 +885,7 @@ async function verify(){
 | 1 | **漏洞 URL** | `https://bbs.ikuai8.com/admin.php` | ✅ |
 | 2 | **归属证明** | **已由本报告取证**：`forum.php` 页脚 `iKuai Inc. ( 京ICP备13042604号 )`，title 为「iKuai爱快路由官方论坛」，与官网 `京ICP备13042604号-6` 同属一个备案主体 | ⚠️ **仅需你截图**（步骤见待办清单） |
 | 3 | **首页截图（含地址栏）** | 需浏览器访问 `https://bbs.ikuai8.com/admin.php`、地址栏可见的完整截图 | ⚠️ **须自行补截图** |
-| 4 | **漏洞证明** | 页脚 `Powered by Discuz! X3.3` + 验证码标识计数 0 + `admin.php` 无 Cookie 即 200 + 明文 HTTP 200 不跳转 | ✅ |
+| 4 | **漏洞证明** | 页脚 `Powered by Discuz! X3.3` + 验证码标识计数 0 + `admin.php` 无 Cookie 即 200 + 人机验证可绕过（**注意：不得再写「明文 200 不跳转」，实测为 301**） | ✅ |
 | 5 | **权重选择** | 按 `bbs.ikuai8.com` 在爱站（aizhan.com）的权重勾选 | ⚠️ **提交时按实际权重勾选** |
 | 6 | 活动/任务选择 | 若在活动期内，需先在活动中心报名 | ⚠️ 视情况 |
 
@@ -1052,7 +1089,7 @@ curl -s https://bbs.ikuai8.com/admin.php | grep -o 'name="admin_[a-z]*"'
 curl -s https://bbs.ikuai8.com/ | grep -c '正在验证您是否是真人'          → 1（被拦截，2174 B）
 curl -s -H 'Cookie: human_verified=true' https://bbs.ikuai8.com/ | wc -c  → 42600（真实论坛页）
 
-# ⑥ 管理入口明文 HTTP 可达且不跳转
+# ⑥ ~~管理入口明文 HTTP 可达且不跳转~~（2026-09-22 撤回：实测 301 跳转）
 curl -s -o /dev/null -w '%{http_code} %{size_download}\n' http://bbs.ikuai8.com/admin.php
 → 200 2769   （无 301/302 跳转）
 ```
@@ -1069,7 +1106,7 @@ curl -s -o /dev/null -w '%{http_code} %{size_download}\n' http://bbs.ikuai8.com/
 | 前台人机验证 | ❌ 可被 `Cookie: human_verified=true` 一条头绕过 |
 | 后台人机验证 | ❌ 不覆盖（`admin.php` 无 Cookie 即返回 200） |
 | 登录失败锁定 | ❌ 按官方公告处于失效状态 |
-| 传输加密 | ❌ `http://bbs.ikuai8.com/admin.php` 200 不跳转 |
+| 传输加密 | ✅ `http://bbs.ikuai8.com/admin.php` → 301 跳转 HTTPS（已更正） |
 
 ---
 
@@ -1080,7 +1117,7 @@ curl -s -o /dev/null -w '%{http_code} %{size_download}\n' http://bbs.ikuai8.com/
 3. 该站点为爱快官方用户社区，账号体系直接关联大量真实路由器用户，账号批量失陷可用于进一步的社会工程与横向渗透。
 4. 公开研究（360CERT《Discuz X3.3 补丁安全分析》）指出 X3.3 还存在 authkey 生成算法缺陷与后台 UCenter 配置写入任意代码执行，
    完整链条为 **无限爆破 → 管理员会话 → 后台任意代码执行 → 服务器失陷**。该链条本次**未验证**，仅作为风险升级说明。
-5. 管理入口明文可达（F-11）使管理员凭据在首次访问、新设备等未缓存 HSTS 的场景下可被中间人截获。
+5. ~~管理入口明文可达（F-11）使管理员凭据在首次访问、新设备等未缓存 HSTS 的场景下可被中间人截获。~~（F-11 已撤回：明文实测 301 跳转）
 
 > 说明：本条报告的成立**不依赖于实际爆破成功**。漏洞成立要件为「版本落在官方公布的受影响区间」
 > 与「站点未部署任一缓解措施」，两者均已取证。执行爆破既无必要，也违反补天平台关于禁止高并发与自动化扫描的规定，故未进行。
@@ -1128,7 +1165,7 @@ RECON-PASSIVE  AliDNS DoH 解析记录
 MANUAL-PROBE   GET /            → 200 Tengine，Cookie HttpOnly 缺 Secure/SameSite
 MANUAL-PROBE   GET /robots.txt  → 200 Joomla 默认模板
 MANUAL-PROBE   GET /sitemap.xml → 200，421 URL，0 动态入口
-MANUAL-PROBE   GET http://      → 200 明文可达，无 HSTS
+MANUAL-PROBE   GET http://      → ~~200 明文可达~~ **更正：301 跳转 HTTPS**（原记录受跟随重定向影响）
 MANUAL-PROBE   GET /administrator/ → 200 与首页 sha256 一致（软 404）
 MANUAL-PROBE   GET /installation/  → 404
 TLS-CHECK      TLS1.3 协商，TLS1.0/1.1 已拒绝
