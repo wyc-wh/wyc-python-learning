@@ -97,6 +97,8 @@
 ## 十、已评估、勿重复评估
 
 - **PentAGI**（`D:\gihub\pentagi-main`，MIT，Go+Docker 12 服务）：**只借鉴方法论，不集成架构** —— Go/Python 不兼容、过度工程、其「Never request permission」与人工确认制对撞、全攻击链自动化对 SRC 是合规风险。已借鉴：置信度三级 / 覆盖度 / 脱敏 / CLI 反幻觉协议。
+- **Strix**（`D:\gihub\strix-main`，Apache-2.0，Python 226 文件 / 源码 40.6k 行 + 技能库 690KB）：**不集成代码，但方法论借鉴价值高于 PentAGI 与字典库** —— 它是自主 AI 渗透 agent（Docker 沙箱 + Caido 代理 + Playwright + shell + Python exploit runtime + 多 agent 编排），执行模型要发 payload/起 shell，与补天公益禁自动化扫描器与破坏性操作**直接冲突**；依赖 Docker + LLM + `openai-agents` SDK，与「零依赖纯标准库」不兼容；**全仓无授权闸**（只有 README 一句 WARNING，`core/inputs.py` 的 authorized_targets 只是给 agent 的范围上下文，非强制校验）。XBEN 104 题 96% 成功率（v0.4.0）。
+  借鉴（按价值）：① `strix/skills/analysis/counterevidence.md` —— 闭环纪律，**已落地，见第十一节**；② `report/coverage.py` + `tools/coverage/tools.py` —— **自我陈述 vs 机器观测双源 + 矛盾即 gap**（第 2 项，`ineffective_rules` 已做半层，尚未影响 score）；③ 29 类漏洞知识库（`skills/vulnerabilities/*.md`，292KB）结构固定为 Attack Surface / Reconnaissance(参数清单) / Validation / **False Positives** / Impact → 抽取式可用（第 3 项）；④ `severity_change_conditions` 字段；⑤ `report/sarif.py` SARIF 2.1.0；⑥ 外部基准 XBEN。⚠️ **`False Positives` 那节对本平台直接致命**：`information_disclosure.md` 明写「Version banners with no exposed vulnerable surface and no chain」不算 —— **正对着 R013/R005 的打法**，继续走这条路前必须先消化这句反例。
 - **字典库**（`D:\gihub\Dictionary-Of-Pentesting-master`，913MB / 4991 文件）：**只能「抽取式集成」**。关键判断：**99.96% 是给扫描器 / 爆破器用的**（口令、用户名字典、御剑/DirBuster 目录爆破、xxe/top25 参数 fuzz、2M 子域字典、UA 池）→ 全部踩补天红线，禁用。真正能用的约 400KB，边际价值排序：**版本正则 > 错误页特征 > 密钥正则 > 路径库**（nuclei 13742 模板已有类似路径内容，边际低）。
 
 | 可集成 | 对接 | 补什么缺口 |
@@ -119,6 +121,46 @@
 `secret-keywords.txt` 69 行与 `access_key` / `secret_key` 两条是**裸关键词/裸名字**，
 一律不许单独成规则，只并入「赋值式」检测的名字集合。
 
-## 十一、提交记录
+## 十一、闭环纪律（CLOSURE.md · 移植自 strix counterevidence）
+
+**为什么做**：发现项有三级置信度兜着，**排除项只有一个「排除」**。于是三种完全
+不同的情况被写成同一句话 —— 确实没有 / 有机制解释 / **没拿到证据**。
+第三种读起来像「已证明安全」，实际是漏报的典型成因。
+
+**三种病例**：① jiaoyu 无测试账号 → 旧措辞「登录态检查**不适用**」，实际是
+整个登录态面没覆盖、ceiling 从 40 腰斩到 20；② jiaoyu 的 R013 版本提取全失败
+（WAF 改写 Server 头）被记成「排除」→ **R005 实质未生效在台账上完全看不见**；
+③ Discuz!「默认不触发」—— 外部判据给出立场：**运维可配置性不构成控制**
+（但站点侧仍须取证）。
+
+**五级状态**：`reported` / `no_issue_found`(测无发现) / `ruled_out`(已澄清) /
+`not_applicable`(不适用) / `needs_follow_up`(待跟进)。
+`ruled_out` 的判据是能填完这句话：
+「因为 **<控制点>** 在 **<位置>** 生效，于攻击者可达的每条路径上、
+在 **<危险效果>** 之前 **<做了什么>**」—— **填不完就不是 ruled_out**。
+
+**实现四处 + 两道闸**：
+- 构造函数 `rules/base.py::negative_result`（五级校验 / 自动降级 / 非法值抛错 /
+  `needs_manual_check=True` 强制 needs_follow_up）
+- 规则 R006 / R008 / R010 / R011 / R013 显式标注
+- lint `EL030`–`EL034`（第二道闸，抓「用 dict 绕过构造函数」的历史写法）
+- `coverage.closure.{tally,ineffective_rules}` + 报告分表渲染
+  （`orchestrator._rule_checks_section`：已澄清表 vs 待跟进表，已澄清附控制点）
+- 靶场 `_test_closure_lab.py` 67 条：五种站点形态 × 五级状态
+
+**只读方法学下唯一合法的升级路径**：横向事实 —— 多条不同路径返回字节完全相同的
+响应 → 机制可指名 + 证据可核对 → 升 `ruled_out`。`R008` 的 `_upgraded_from` 痕迹。
+边界：只排除「这个 200 是文件内容」，**不解除**「文件是否存在」的疑问。
+
+**顺带修的一处**：`/.env` → **302**（qmt 实测重定向到 `/login?data=...`）以前记
+「测无发现」，但重定向说明「服务端把该路径路由到了别处」，存在性同样未判定
+→ 措辞必须带上重定向目标与该边界。
+
+**未做（第 2 / 3 项）**：① `counterevidence` / `severity_change_conditions`
+未结构化（只有 EL034 提示）；② 机器观测层尚未影响 `score`（`ineffective_rules`
+只进 gaps）—— 做了之后 jiaoyu 那份 100/100 会诚实地降下来；
+③ `not_applicable` 无真实用例（**不为用满枚举值而硬塞**）。
+
+## 十二、提交记录
 
 fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）

@@ -6,6 +6,7 @@
 ## 骨架
 
 - `pentest-orchestrator/`：`orchestrator.py`(CLI) `rules_engine.py` `rules/`(R001~R014) `scanners.py`(nmap+nuclei) `cvss.py` `exploit.py` `manual_probe.py` `coverage.py` `evidence_lint.py` `credentials.py` `_lab_cert.py`
+- 方法学文档：`RULES.md`（规则清单与适用边界）、`CLOSURE.md`（闭环纪律）
 - 子命令 `init plan autorun engage verify report status check lint submit coverage`
 - 合规闸：授权确认 + 范围校验 + `auth.json` + append-only 审计 + 破坏性阶段禁用 + `allow_scanner=false` 硬开关
 - 置信度 `detected🔍`→`confirmed✅`→`exploited💥`；**detected 不得提交 SRC**
@@ -79,6 +80,26 @@
   读过原文才发现是 **SQL/框架报错串表**；`secret-keywords.txt` 69 行是裸关键词，
   单独使用会命中每一个网页。故构建脚本**强制逐条定性**（漏/多/重复一律报错退出）
 
+## 闭环纪律（CLOSURE.md · 移植自 strix）
+
+- **「排除项」不是一个词，是五种状态**：`reported`/`no_issue_found`(测无发现)/
+  `ruled_out`(已澄清)/`not_applicable`(不适用)/`needs_follow_up`(待跟进)。
+  压成一个「排除」= 把「没拿到证据」读成「查过了没问题」。
+  `negative_result(..., outcome=, evidence=, control=, gap=)`；
+  **`ruled_out` 缺 control 或 evidence 会被自动降级为 `needs_follow_up`**（留 `_degraded_from`）；
+  outcome 拼错直接抛 `ValueError`。**降级方向永远更保守 —— 宁可说没查清，也不要说安全**
+- **`needs_follow_up` ≠ 「已排除」**，报告里它单独成表并标注「不得读作安全」。
+  **缺失的证据不是不存在的证据**：无账号 / 预算耗尽 / 判不了 / 跑不起来
+  一律 `needs_follow_up`，**不是** `not_applicable`
+  （R010 以前写「登录态检查不适用」→ 实际是**整个登录态面没覆盖**）
+- **只读方法学下唯一合法的升级路径 = 横向事实**：多条**不同**路径返回**字节完全相同**
+  的响应 → 机制可指名（统一模板）+ 证据可核对（sha256）→ 升为 `ruled_out`。
+  **边界**：只排除「这个 200 是文件内容」，**不解除**「文件是否存在」的疑问（WAF 同样会）
+- **lint 是第二道闸**：EL030(已澄清缺要件·阻断) / EL031(非法状态·阻断) /
+  EL032(待跟进没写缺口) / EL033(未标注状态) / EL034(发现缺反向论证)
+- **coverage 的 `closure.ineffective_rules`** = 「跑过、只产待跟进、无发现」的规则
+  → 进 gaps。**规则执行 ≠ 检查面被覆盖**（jiaoyu 的 R013 就是标本）
+
 ## 台账
 
 - **ikuai8.com**：F-10 高危（Discuz! X3.3 EOL + 登录失败计数失效 7.4/7.7）、F-05(6.5)。R012 试跑 8 个 in_scope 资产未命中未授权访问；`demo.`/`icc.` 的 SPA bundle 匿名可下载（各自提取出 `/fs/*`、`/admin/index/*` 与 `/console/*` 清单），匿名请求被 catch-all 兜回首页/404，**需登录态才能验证鉴权**（待办）。
@@ -88,5 +109,5 @@
 
 ## 索引
 
-- `HANDBOOK.md` —— 手工只读手法 / 「版本命中官方公告」打法 / 规则引擎 R001-R013 详解 / 证据 lint / 框架指纹 / 覆盖度量化 / 登录态建模 / 图表导出 / 已评估结论（PentAGI、字典库）
+- `HANDBOOK.md` —— 手工只读手法 / 「版本命中官方公告」打法 / 规则引擎 R001-R013 详解 / 证据 lint / 框架指纹 / 覆盖度量化 / 登录态建模 / **闭环纪律（第十一节）** / 图表导出 / 已评估结论（PentAGI、strix、字典库）
 - 工程内 `RULES.md` —— 规则清单与每条适用边界
