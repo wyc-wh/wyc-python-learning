@@ -27,3 +27,11 @@ cred*.txt
 *.cred
 .cred*
 pentest-orchestrator/_cred*
+
+# 真实目标取证产物（与 .sessions/ 同类：含真实主机名、路径、响应元数据，属本地产物）
+# 规则检查单资产快照
+pentest-orchestrator/rules_*.json
+# 真实目标运行日志（_rerun_* / _r012_* / _r013_* 等）
+pentest-orchestrator/_*.log
+# 真实目标报告附录（提交稿素材，按目标生成）
+pentest-orchestrator/_appendix_*.md
