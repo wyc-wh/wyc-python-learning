@@ -6,6 +6,7 @@
 - 工程结构 / 子命令 / 合规闸 / CVSS / 工具清单 → **HANDBOOK 十四·骨架清单**
 - 置信度 `detected🔍`→`confirmed✅`→`exploited💥`；**detected 不得提交 SRC**。`rate_findings` 重算会重置置信度 → `generate_report` 必须回放 `session["verifications"]`
 - **本机 shell 四坑**：① git 用 PortableGit 全路径（`~/.workbuddy/binaries/PortableGit/versions/*/cmd/git.exe`）② **沙箱 bash 的 PATH 每条命令被 shim 重置** → 命令自带 `export PATH="/usr/bin:/bin:/mingw64/bin:/c/Windows/System32:$PATH"` ③ **PowerShell 抓不到 stdout**，删文件走 Python `os.remove` ④ **`curl -w %{size_download}` 不可信** → 落文件再 `wc -c` + 查 `</html>`
+- **同文件多处 Edit 不要批量发**：实测单条消息里多个 `Edit` 调用只有第一条稳定落地，其余可能没生效或造成开闭标签错配；**改为一次性 Python 替换脚本（每条 `count==1` 断言）**
 
 ## Web 控制台 / UI（HANDBOOK 十五~十五之三）
 - 合规闸 `sys.exit(2)` **静默杀死请求线程**（`SystemExit` 非 `Exception`，`socketserver` 不捕）→ 必须 `_capture()` 兜，再从日志挑 `[BLOCK]/[FAIL]`
