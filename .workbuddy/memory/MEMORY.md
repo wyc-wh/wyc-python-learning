@@ -1,19 +1,23 @@
 # 项目记忆 - 自动挖洞平台（速查）
 
-> **详情层 `HANDBOOK.md`**：一 手法 · 二 版本命中公告 · 三 规则引擎 · 四 lint · 五 指纹 · 六 覆盖度 · 七 登录态 · 八 链路 · 十 已评估 · 十一 闭环 · 十二 观测层 · 十三 判据库 · **十四 工程纪律全文** · 十五 Web · 十五之二 UI · 十六 提交记录。过程 `2026-09-21/22/23.md`，状态与待办 `LEDGER.md`。
+> **详情层 `HANDBOOK.md`**：一 手法 · 二 版本命中公告 · 三 规则引擎 · 四 lint · 五 指纹 · 六 覆盖度 · 七 登录态 · 八 链路 · 十 已评估 · 十一 闭环 · 十二 观测层 · 十三 判据库 · **十四 工程纪律全文** · 十五 Web · 十五之二 UI 第一轮 · 十五之三 UI 第二轮 · 十六 提交记录。过程 `2026-09-21/22/23.md`，状态与待办 `LEDGER.md`。
 > **本文只放「不知道就会犯错」的要点**；标「详见」的段落，MEMORY 只留最反直觉的一条，其余全文都在 HANDBOOK 对应节。
 
 ## 骨架
 - 工程结构 / 子命令 / 合规闸 / CVSS 调用 / 工具清单 → **详见 HANDBOOK 十四·骨架清单**
 - 置信度 `detected🔍`→`confirmed✅`→`exploited💥`；**detected 不得提交 SRC**。`rate_findings` 重算会重置置信度 → `generate_report` 必须回放 `session["verifications"]`
-- **本机 shell 三坑**：① git 写全路径 `~/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe` ② **沙箱 bash 的 PATH 每条命令被 shim 重置** → 命令自带 `export PATH="/usr/bin:/bin:/mingw64/bin:/c/Windows/System32:$PATH"` 或写全 `.exe` ③ **PowerShell 抓不到 stdout**；删文件走 Python `os.remove`
+- **本机 shell 四坑**：① git 写全路径 `~/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe` ② **沙箱 bash 的 PATH 每条命令被 shim 重置** → 命令自带 `export PATH="/usr/bin:/bin:/mingw64/bin:/c/Windows/System32:$PATH"` 或写全 `.exe` ③ **PowerShell 抓不到 stdout**；删文件走 Python `os.remove` ④ **`curl -w %{size_download}` 不可信**（配 `-o /dev/null` 时报过恰好 65536，真实 85726，一度以为服务端截断响应）→ 校验完整性落文件：`-o f` + `wc -c` + 查 `</html>`
 
-## Web 控制台 / UI（详见 HANDBOOK 十五 / 十五之二）
+## Web 控制台 / UI（详见 HANDBOOK 十五 / 十五之二 / 十五之三）
 - 合规闸 `sys.exit(2)` **静默杀死请求线程**（`SystemExit` 继承 `BaseException`，`socketserver` 只捕 `Exception`）→ 必须 `_capture()` 兜；只回退出码 = 没告诉原因，要从捕获日志挑 `[BLOCK]/[FAIL]` 行
 - **Windows ADS**：`rules_x:port.json` 的 `:` 被 NTFS 当数据流 → 本体 0 字节而 `isfile()`/`getsize()` 全正常 → 一律走 `safe_evidence_name()`
 - **PAGE 必须 raw string**：否则编译期把 JS 的 `\n` 解成真换行 → 单引号字面量折断、正则被提前处理。判据 = 断言 `join('\n')` 子串存在；拼接走脚本切片，替换前 assert 无 `"""`、末尾非反斜杠
 - **前端也要门禁**：`node --check` 只取 `<script>` **标签之间**的 JS（带标签 = 非法 token）+ `$('#id')` 与内联 onclick 函数名一致性断言；node 缺失**显式 SKIP 且不计入通过**
-- **视觉验证**：无头 Chrome 900 宽截图；看下半页用 wrapper `<iframe style="top:-1450px">` 裁剪。**`#锚点` 截图会「内容贴底 + 上方大片黑」，别据此判布局 bug**
+- **视觉验证**：无头 Chrome 900 宽截图；看下半页用 wrapper `<iframe style="top:-1450px">` 裁剪。**`#锚点` 截图会「内容贴底 + 上方大片黑」，别据此判布局 bug**；**iframe 高度必须 ≤3500px**（Chrome 单层渲染上限约 4096，超限部分不绘制 → 截图是纯背景色，误读成「布局空白」；**多张截图字节数完全相同就是「全没渲染」的信号**）。浅色主题要看真实数据得另起一个 `<body class="light">` 的临时实例，别用 `file://` 注入（跨源 fetch 被 CORS 拦）
+- **进度与门禁必须分开建模**：流程节点同时承载「走到哪」与「能不能进」。把「前置未满足」写成 `state="locked"` → **「没做过」和「做了被锁」无法区分**（闭环纪律同款语义塌缩）。拆成 `state`（进度，不撒谎）/ `gate`+`need`（门禁）/ `hot`（危险度）三个独立维度
+- **后端字段缺失会让前端印出「假事实」**：界面写「排除项 `m.excluded` 条」，字段没返回 → `undefined||0` → 稳定显示「排除项 0 条」且**无任何报错**。前端引用的每个后端字段，要么靶场断言其存在，要么界面区分「无此项」与「值为 0」
+- **内联 onclick 不能传 `JSON.stringify` 的值**（会生成 `onclick="f('a',"pending")"` → 双引号提前闭合属性，整段 JS 报废）→ 内联只传 key，其余从全局状态反查
+- **状态变了标签必须跟着变**：主题存了 localStorage 但按钮文案只在 toggle 里改 → 刷新后「页面浅色、按钮写深色」。任何「状态变了但标签没同步」都是同类 bug
 - 驾驶舱数据后端驱动：风险四档**只计发现项**（`needs_follow_up` 是没查清，不是风险）；严重度**必须归一**（`High` vs `high`）；**越界拦截数只认审计链 BLOCK/REJECT**（`api_scope_check` 零副作用不写审计，否则虚增）
 - **前端格式校验必须复用后端判据**（`orch.validate_scope`）：自造一套的假绿灯**比不校验更危险**
 - 界面强制自律下限（≥6s / ≤10）并回显 `clamps`；**靶场 monkeypatch `webui.MIN_INTERVAL`**，不在生产代码开后门
@@ -48,4 +52,4 @@
 - **lint 第二道闸**：EL030(澄清缺要件·阻断)/EL031(非法状态·阻断)/EL032(待跟进没写缺口)/EL033(未标状态)/EL034(发现缺反向论证)/EL035·EL036(外部排除判据 + `C:L` 无内容，警告级**不阻断提交**)
 
 ## 台账
-→ **已拆到 `LEDGER.md`**（目标进展 / 待办 / 回归基线）。速记：ikuai8 = F-10 高危（7.4/7.7）；jiaoyu = J-01 中危，匿名侧扎实、登录态未覆盖；**回归基线 12 靶场 615 条全绿**。
+→ **已拆到 `LEDGER.md`**（目标进展 / 待办 / 回归基线）。速记：ikuai8 = F-10 高危（7.4/7.7）；jiaoyu = J-01 中危，匿名侧扎实、登录态未覆盖；**回归基线 12 靶场 681 条全绿**。
