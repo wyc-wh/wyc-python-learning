@@ -293,6 +293,13 @@ feroxbuster / subfinder / amass / httpx / sqlmap / wafw00f（缺 nikto whatweb h
 ③ **PowerShell 的 stdout 抓不到**（只回「Command completed with exit code 0」）→ 别用它取数据。
 POSIX `rm` 被 shim 包了一层 safe-delete，同样受 ② 影响 → 删文件可用 Python `os.remove`。
 
+**`.gitignore` 约定（哪些产物不入库）**：凡「真实目标取证产物」一律忽略，判据是
+**文件里出现真实主机名 / 路径 / 响应元数据** —— 与 `.sessions/` 同类，属本地产物。
+已忽略：`pentest-orchestrator/rules_*.json`（规则检查单资产快照）、
+`pentest-orchestrator/_*.log`（真实目标运行日志）、`pentest-orchestrator/_appendix_*.md`
+（按目标生成的报告附录 / 提交稿素材）、`cred*`（P4 凭据）。**别为了「留痕」把它们提交**：
+需要留痕的是**方法与结论**（HANDBOOK / LEDGER + 报告正文），不是原始响应元数据。
+
 ### 证据铁律（两次翻车换来）
 
 1. **「缺失」与「值为 None」必须字面可区分**：缺失写 `<未声明>` + `*_present` 布尔。
@@ -613,3 +620,5 @@ fb04a82（strix 第 2、3 项：机器观测层 + 排除判据库）· a0dca4b�
 b65074c（修 webui scan 分支 `payload` 未定义必崩点）· 82a6592（只读规则引擎接入 Web 控制台）
 7be3932（补齐提交记录）· 9ec52ea（UI 第一轮：5 大区块 / 强制配色 / 5 动效 / 4 交互锁）
 612b451（UI 第二轮：8 级信息层级 / 视觉规范 / 三类弹窗 / 合规强化）
+db18b91（补齐提交记录）· d14c375（MEMORY 超限瘦身 + 补天 SRC 下沉 十四之二）
+2d70005（.gitignore 忽略真实目标取证产物）
