@@ -70,6 +70,16 @@
 任何带该 meta 的站都会被误报成泛微 OA。修复：`\bE-Mobile\b|\bweaver\b`。
 **新增指纹前先在真实站点上做子串自检**：把模式逐个 `in` 到一页普通 HTML 里看会不会误中。
 
+**⭐ R001 判定顺序：合法值校验必须先于占位符黑名单**（2026-09-25 vpn.jxnu 翻车）：
+通用占位符黑名单含 `^none$`（本意抓 `X-Frame-Options: none`），但
+`X-Permitted-Cross-Domain-Policies: none` 是合法枚举值 → 先跑黑名单会误杀。
+修复：先过 `HEADER_SPECS` 该头自己的 valid_re，合法即跳过。
+**新增安全头时必须同步核对：它的合法值集合是否与占位符黑名单相交。**
+
+**⭐ verify --rule 是整组升级**：同一 rule_id 的全部发现项共享最后一次的
+evidence/note —— 多目标同规则（如 3 个站都命中 R003）时，提交稿里每条的
+【人工复核】会串成最后一条的内容。**出稿后逐条核对复核文字**，串了就按位置改写。
+
 ## 六、覆盖度量化
 
 `coverage.py` + `orchestrator coverage`。靶场 81/81（含 ⑪ 段机器观测层 19 条）。

@@ -42,6 +42,19 @@
 
 
 
+## jxnu.edu.cn（补天公益 SRC，江西师范大学）
+
+- **2026-09-25 首轮：4 条 confirmed 可提交** —— jwc（ASP.NET_SessionId 无 Secure）/
+  oas（JSESSIONID）/ tsg（7 Cookie 全无 Secure）各 低危 3.1；
+  mail（HTTP 明文下发 Coremail 登录表单、仅客户端 JS 升级）中危 4.2
+- graduate（无 Cookie 纯静态）建议不提交；mail R014 twilio 特征 3 次复测不可复现 → 疑似误报
+- 引擎误报两连修：R009 weaver 子串（dihuangbox）+ R001 占位符黑名单误杀
+  XPCDP 合法值 `none`（改为合法值校验先行，靶场 25/25）
+- 28 存活子域核查 10 个；uis=OpenResty 1.15.8.1（KB 无命中）；www/uis/vpn/pan/szqhjs 零发现
+- 会话 BUTIAN-GY-JXNU-20260925-182944；**auth_id=占位值，提交前补真实 cid**
+- 教训：verify --rule 整组升级会把最后一次 evidence 套到同组全部条目 → 提交稿逐条核对
+- 提交侧待人工补：②归属 ICP ③首页截图 ⑤爱站权重 ⑥活动任务
+
 **12 个靶场 728 条全绿**：6 + 37 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40 + 235
 （authgate / evidence_lint / coverage / rules / stack / authz / api_surface /
 service_version / p1 / closure / fp / webui）
