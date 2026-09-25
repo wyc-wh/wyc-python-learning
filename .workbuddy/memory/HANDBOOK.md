@@ -613,12 +613,39 @@ CLI 截图只能截视口顶部；而 Read 会把大图缩到看不清。做法�
 3 个语义色 + 灰映射而不撞色，故低危沿用 `#FFD666`，**并严格守住红/橙的语义**：
 红只用于法律警示与阻断，橙只用于利用模块与中危。**这是取舍，不是遗漏。**
 
+## 十五之四、UI 第三轮（2026-09-25 · 方案 B+C：作战概览 + 左导航）
+
+### 方案 B — 信息密度
+- **流程导航 + 漏洞统计合并为「作战概览」单卡**（`#flow` 嵌入 `#stats`
+  内部，`阶段进度` / `风险分布` 两个 `.grp` 小节）。`.flow` 由独立卡壳
+  （自带 border/shadow/margin）改为嵌入式面板（deep 底 + padding:14px）
+  —— **嵌进卡片时必须剥掉原来的卡壳样式**，否则双层边框双层阴影
+- 任务操作区收敛为「主流程 / 合规检测」两行；次级功能降为 `.card-ft`
+  卡底 footer（带 `次级功能` hint 字样），视觉权重降级但功能一个不少
+
+### 方案 C — 导航结构
+- `.wrap` → `.layout{display:flex}`：左侧 `.sidenav`（186px，
+  `position:sticky;top:76px`）+ 右侧 `<main class="main">`
+- 导航 6 项对应 6 张卡（`data-t` 定位，**不带 id= 前缀**，避免撞顺序断言）；
+  `nav_goto(id)`：滚动定位 + **DETAILS 自动 open**（资产/日志/利用导航即展开）
+- `IntersectionObserver` 滚动联动高亮（`rootMargin:'-40% 0px -55%'` 视口带）；
+  `paintNav()` 门禁徽标（未授权/已授权）随 `refresh()` 同步
+- 窄屏 ≤960px：`.layout` 纵向堆叠、侧栏折叠为**横向滚动条**（导航换形态
+  而不是消失）
+
+### 合规边界（B+C 均适用）
+- **左导航只是定位手段**：gatemask / 高危 veil / data-need 锁照常挡在
+  内容前面，导航不持有任何解锁逻辑
+- 测试顺序断言同步改为 `gate < stats < flow < ops < assets < logs < expo`
+  （flow 嵌入 stats 后字符串顺序变化）—— **改嵌套结构必须同步改顺序断言**
+
 ## 十六、提交记录
 
-fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）
-fb04a82（strix 第 2、3 项：机器观测层 + 排除判据库）· a0dca4b（记忆分层：详情下沉 HANDBOOK、状态拆出 LEDGER）
+fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）fb04a82（strix 第 2、3 项：机器观测层 + 排除判据库）· a0dca4b（记忆分层：详情下沉 HANDBOOK、状态拆出 LEDGER）
 b65074c（修 webui scan 分支 `payload` 未定义必崩点）· 82a6592（只读规则引擎接入 Web 控制台）
 7be3932（补齐提交记录）· 9ec52ea（UI 第一轮：5 大区块 / 强制配色 / 5 动效 / 4 交互锁）
 612b451（UI 第二轮：8 级信息层级 / 视觉规范 / 三类弹窗 / 合规强化）
 db18b91（补齐提交记录）· d14c375（MEMORY 超限瘦身 + 补天 SRC 下沉 十四之二）
 2d70005（.gitignore 忽略真实目标取证产物）
+74c6f66（界面简化 A：详情卡收起 + 参数折叠 + 顶栏收敛）· 8fa7d15（补记录）
+1cace1f（UI 第三轮方案 B+C：作战概览合并卡 + 左侧阶段导航）

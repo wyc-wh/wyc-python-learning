@@ -27,11 +27,12 @@
 
 ## 回归基线
 
-**12 个靶场 681 条全绿**：6 + 37 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40 + 188
+**12 个靶场 704 条全绿**：6 + 37 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40 + 211
 （authgate / evidence_lint / coverage / rules / stack / authz / api_surface /
 service_version / p1 / closure / fp / webui）
 
-- webui 靶场演进：39（接入规则引擎前）→ **122**（UI 第一轮）→ **188**（UI 第二轮）→ **193**（UI 简化 A）
+- webui 靶场演进：39（接入规则引擎前）→ **122**（UI 第一轮）→ **188**（UI 第二轮）
+  → **193**（UI 简化 A）→ **211**（UI 第三轮方案 B+C）
 - 跑法：`PENTEST_NODE=<node.exe> python _test_*.py`；**node 缺失时 webui 的前端 JS
   语法闸会显式 SKIP 且不计入通过**（虚门禁比没门禁更危险），故设了才拿到 188
 
