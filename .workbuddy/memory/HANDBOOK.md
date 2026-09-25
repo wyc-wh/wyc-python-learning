@@ -666,6 +666,32 @@ CLI 截图只能截视口顶部；而 Read 会把大图缩到看不清。做法�
 - 回归 **12 靶场 714 条全绿**（webui 218 → 221）；e2e 靶场输出的 `[FAIL]`
   是合规闸自身日志行（升级需证据提示），`exit=0` + 全 PASS 为准
 
+## 十五之五、Dashboard 重构（2026-09-25 · 视图切换 + 概览 7 卡）
+
+### 结构
+- 主区改 **5 视图切换**（`.view`/`.view.on`）：dash / ops / assets / logs / expo；
+  左导航从「滚动定位」升级为**页面切换器** `showView(id)`（IntersectionObserver
+  滚动联动随之删除）；12 栅格：`.sidenav` span 2 / `.main` span 10
+- 概览页 7 卡：卡0 门禁通栏（状态/目标/会话 + 精简法律提示 + `展开详情`
+  折叠完整协议/合规开关 + 修改授权信息）；卡1 阶段进度导航（**6 节点**，
+  新增「报告归档」）；卡2 风险指标四卡；卡3 任务总览（只读）；卡4 资产总览；
+  卡5 审计预览（`AP_MAX=5`，term() 同步克隆行）；卡6 高危模块状态
+- **概览页禁止执行按钮**（测试取 `v_dash` 子串断言无 `data-need=`/autorun/check_/plan_/engage_）；
+  资产/审计/高危由 `details` 折叠卡转为独立页 `<section>`（视图即页面，
+  折叠语义已无意义）；`.assetal` 内层折叠保留
+- 后端：`_flow_steps(sess, audit_rows)` 增第 6 节点 `report` —— 审计链出现
+  REPORT 动作即 done；`api_report` 查看报告时写审计 `REPORT`（报告访问本身
+  可审计，同时驱动节点状态，前端无法伪造）
+
+### 踩坑
+- **删元素时把别人还在用的变量一起删了**：去掉 `gate_ok` 块时连带删了
+  `var ok = !!s;`，但授权摘要块仍引用 `ok` → ReferenceError 使 refresh 中断、
+  `applyLocks()` 没跑、遮罩不消失。**静态断言查不出运行时引用错** ——
+  用 `chrome --dump-dom --virtual-time-budget` 看 DOM 实际更新到哪一步定位
+- 改完源码**必须重启预览进程**：PAGE 编译期进内存，热改文件不影响在跑的服务
+  （曾对着旧进程连截两张「没修好」的图）
+- e2e 里 `[FAIL]` 是合规闸自身日志行（升级需证据提示），以 `exit=0` + 全 PASS 为准
+
 ## 十六、提交记录
 
 fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）fb04a82（strix 第 2、3 项：机器观测层 + 排除判据库）· a0dca4b（记忆分层：详情下沉 HANDBOOK、状态拆出 LEDGER）
@@ -675,6 +701,7 @@ b65074c（修 webui scan 分支 `payload` 未定义必崩点）· 82a6592（只�
 db18b91（补齐提交记录）· d14c375（MEMORY 超限瘦身 + 补天 SRC 下沉 十四之二）
 74c6f66（UI 简化 A：三详情卡折叠 / 参数面板 / 顶栏收敛）· 1cace1f（UI 方案 B+C：作战概览合并卡 + 左侧阶段导航）
 a6db8b0（UI 方案 D：门禁卡授权后瘦身）· f7cc1ec（UI 方案 E+F：长说明压缩 + 流程节点改纯状态）
+609f626（Dashboard 重构：视图切换 + 概览 7 卡 + 第 6 节点报告归档）
 2d70005（.gitignore 忽略真实目标取证产物）
 74c6f66（界面简化 A：详情卡收起 + 参数折叠 + 顶栏收敛）· 8fa7d15（补记录）
 1cace1f（UI 第三轮方案 B+C：作战概览合并卡 + 左侧阶段导航）
