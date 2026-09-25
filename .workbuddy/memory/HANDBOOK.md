@@ -65,6 +65,10 @@
 **刻意不写 CVE 编号**：只给官方公告入口 + 风险类型，命中后 `needs_manual_check=True`。**臆造 CVE 明令禁止。**
 可靠度 high/medium/low，**low 不单独采信**；**同栈多命中取可靠度最高，不是第一条**（曾把 qmt 的 XSRF-TOKEN(medium) 当首选而漏 `laravel_session`(high)）。
 实战：bbs.ikuai8 → Discuz!(body,high)；qmt.jiaoyu → Laravel(cookie,medium)。**Discuz 只在带 R002 绕过时才命中。**
+**⭐ body 指纹正则必须加词边界**（2026-09-25 dihuangbox 翻车）：weaver 的 `E-Mobile`
+被正常 meta `apple-mobile-web-app-status-bar-style` 的子串 `e-mobile` 命中，
+任何带该 meta 的站都会被误报成泛微 OA。修复：`\bE-Mobile\b|\bweaver\b`。
+**新增指纹前先在真实站点上做子串自检**：把模式逐个 `in` 到一页普通 HTML 里看会不会误中。
 
 ## 六、覆盖度量化
 

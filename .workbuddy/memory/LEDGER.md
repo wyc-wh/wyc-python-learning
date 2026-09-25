@@ -25,7 +25,22 @@
   要挖只能靠登录 Cookie（**2 小时过期**，`laravel_session` + `XSRF-TOKEN` 缺一不可，
   三个子站不通用）
 
-## 回归基线
+## www.dihuangbox.com（补天公益 SRC，cid=65452 厂商：上海遥增智能）
+
+- **2026-09-25 首轮匿名只读：无可提交漏洞**。静态 coolsite 建站模板官网
+  （page1/2/9），无 catch-all / 无目录列表（403）/ 后台×4 与敏感文件×3 全 404 /
+  无任何 Set-Cookie / nginx 无版本号 → R005/R013 版本面无证据可取
+- R009「泛微 OA」= 引擎误报：`E-Mobile` 被 `apple-mobile-web-app` 子串命中
+  → stacks.json weaver 指纹加 `\b` 词边界（规则靶场 25/25 回归过）
+- R003 明文 HTTP 200 = 事实成立但**无链**（无会话 Cookie / R001 干净 / 纯静态）
+  → 维持 detected 不提交（D-01）
+- ⚠️ **归属主体不一致**：站点版权 = 上海递煌智能科技有限公司（沪ICP备20004178号-1~-4），
+  补天项目厂商名 = 上海遥增智能 —— 提交时并列出示，被质疑再补关联证明
+- 关联域名 `diyibox.com`（页脚邮箱）：未公开链出，范围外仅记线索
+- 会话：BUTIAN-GY-65452-20260925-164716；报告 report_dihuangbox_20260925.md
+- 唯一推进方向：厂商在补天明确业务系统资产范围 + 提供测试账号
+
+
 
 **12 个靶场 728 条全绿**：6 + 37 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40 + 235
 （authgate / evidence_lint / coverage / rules / stack / authz / api_surface /
