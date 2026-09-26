@@ -61,9 +61,12 @@
 - 教训：verify --rule 整组升级会把最后一次 evidence 套到同组全部条目 → 提交稿逐条核对
 - 提交侧待人工补：②归属 ICP ③首页截图 ⑤爱站权重 ⑥活动任务
 
-**12 个靶场 728 条全绿**：6 + 37 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40 + 235
+**15 个靶场 861 条全绿**：6 + 45 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40 + 46 + 26 + 8 + 280
 （authgate / evidence_lint / coverage / rules / stack / authz / api_surface /
-service_version / p1 / closure / fp / webui）
+service_version / p1 / closure / fp / **flow** / **engine_fix** / **envprobe** / webui）
+—— 2026-09-26 平台完善日：P0×4 根因修复（verify 逐条升级 / :80 环境探针 /
+静默失败兜底 / counterevidence 模板）+ receipt / submit --merge-rule / SARIF /
+R013 栈指纹扩展（Cookie 名/资源路径/X-*头）+ WebUI 接入 fp_review、credentials、待跟进下钻
 
 - webui 靶场演进：39（接入规则引擎前）→ **122**（UI 第一轮）→ **188**（UI 第二轮）
   → **193**（UI 简化 A）→ **211**（UI 第三轮方案 B+C）→ **218**（方案 D 门禁卡瘦身）
@@ -73,9 +76,11 @@ service_version / p1 / closure / fp / webui）
 
 ## 待办（优先级降序）
 
-0. **平台完善清单**：`pentest-orchestrator/平台完善清单_20260926.md`（P0 四条根因：
-   verify 组级升级 / :80 间歇拦截无环境自检 / 规则静默失败无兜底 / R003 缺反向论证）
-1. 提交回执闭环（比挖新洞更重要）
+0. ~~平台完善清单~~ → **2026-09-26 晚全部代码项完成**（P0×4 根因 + receipt/merge-rule/SARIF/
+   R013 栈指纹/fp_review+credentials 接 WebUI/待跟进下钻），见
+   `pentest-orchestrator/平台完善清单_20260926.md` 顶部完成状态。
+   剩执行项：jxnu 剩余 9 资产核查、测试账号申请模板
+1. 提交回执闭环（**receipt 子命令已落地**，待实战回填平台结论）
 2. ikuai8 的 `demo.` / `icc.` 登录态验证
 3. **修 `target_in_scope` 两处实现不一致**：`orchestrator` 版**不**剥端口 /
    `rules_engine` 版会剥 → 带端口的 target 在 init 与 check 两侧判定相反，
