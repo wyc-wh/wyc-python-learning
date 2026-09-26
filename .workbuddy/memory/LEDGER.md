@@ -73,6 +73,8 @@ service_version / p1 / closure / fp / webui）
 
 ## 待办（优先级降序）
 
+0. **平台完善清单**：`pentest-orchestrator/平台完善清单_20260926.md`（P0 四条根因：
+   verify 组级升级 / :80 间歇拦截无环境自检 / 规则静默失败无兜底 / R003 缺反向论证）
 1. 提交回执闭环（比挖新洞更重要）
 2. ikuai8 的 `demo.` / `icc.` 登录态验证
 3. **修 `target_in_scope` 两处实现不一致**：`orchestrator` 版**不**剥端口 /
