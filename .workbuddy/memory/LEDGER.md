@@ -38,6 +38,19 @@
   补天项目厂商名 = 上海遥增智能 —— 提交时并列出示，被质疑再补关联证明
 - 关联域名 `diyibox.com`（页脚邮箱）：未公开链出，范围外仅记线索
 - 会话：BUTIAN-GY-65452-20260925-164716；报告 report_dihuangbox_20260925.md
+
+## lenovo.com.cn / motorola.com.cn（补天联想 SRC，含奖励计划）
+
+- **2026-09-28 首轮匿名只读：终止在 recon+check，零可提交漏洞**。CT 203+13 子域 →
+  21 主机探测存活主入口 6 个（www/support/app/sso/api/file）→ 规则引擎
+  R001/R003/R006/R008/R009/R012/R013 全部 findings=[]；厚 CDN（EdgeOne/BigIP/
+  istio-envoy），API 面全在认证墙后，R013 无版本证据（R005 未生效记待跟进）
+- gitlab.mbgstore 公网 DNS 指向 10.192.10.118（RFC1918 泄露，同 jxnu ehall 判例：仅记录）
+- 13 个 CT 主机 DNS 已死（证书残留，勿再探测）
+- ⚠️ 授权缺口未补：cid 占位、截图 scope 疑截断、「禁止自动化扫描器」标注未核实
+  → 提交闸 locked；深挖唯一方向 = 登录态（需测试账号）
+- 会话：BUTIAN-LENOVO-20260928-194055；工件 rules_lenovo_*.json + _probe/_ct/_dns/_sanity
+- **工程教训（当日日志详版）：heredoc 长命令回显渲染损坏 ×4 → 一切以落盘 + Read 通道为准**
 - 唯一推进方向：厂商在补天明确业务系统资产范围 + 提供测试账号
 
 
