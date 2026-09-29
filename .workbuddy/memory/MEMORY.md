@@ -9,6 +9,8 @@
 - **同文件多处 Edit 不要批量发**：单条消息里多个 `Edit` 只有第一条稳定落地，其余可能不生效或错配 → **一次性 Python 替换脚本（每条 `count==1` 断言）**；old_string 含标题行时 new_string 必须把标题原样带回（曾吞掉「## 十六」标题）
 
 ## Web 控制台 / UI（HANDBOOK 十五~十五之四）
+- **发布硬化（2026-09-29）**：`webui.py` 已加 HMAC 签名 Cookie 登录；`REQUIRE_AUTH` 默认关（回环本地零摩擦，兼容靶场测试），非回环绑定或 `--require-auth` 时强制开；**无口令则 fail-closed 拒绝启动**（口令来自 env `WEBUI_AUTH_PASSWORD` 或 `webui_auth.json` PBKDF2 哈希，`--set-password` 引导，chmod 600，已被 .gitignore 忽略）。支持 `--tls-cert/--tls-key` 自终止 TLS、`--log-file` 轮转、`--pid-file`。`_capture` 已加全局 `_CAPTURE_LOCK` 防 stdout 并发串台。部署产物见 `deploy/`（systemd/ nginx / Docker / run_prod.sh）+ 根 `DEPLOY.md`。
+- 回环默认无认证是**刻意的**，任何改动不得破坏 `_test_webui_lab.py`（直接 `__new__` 调 api_*，不经 do_GET/do_POST）；新增端点须保持该测试通过。
 - 合规闸 `sys.exit(2)` **静默杀死请求线程**（SystemExit 不被 socketserver 捕）→ 必须 `_capture()` 兜，再从日志挑 `[BLOCK]/[FAIL]`
 - **Windows ADS**：`rules_x:port.json` 的 `:` 被 NTFS 当数据流 → 本体 0 字节但 `isfile()`/`getsize()` 全正常 → 一律 `safe_evidence_name()`
 - **内嵌 PAGE 必须 raw string + 脚本切片拼接**（否则 JS 的 `\n` 编译期被解成真换行）；**前端也要门禁**：`node --check` 只取 `<script>` 标签之间的 JS，并断言 `$('#id')` 与内联 onclick 函数名一致
