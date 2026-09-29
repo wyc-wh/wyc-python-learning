@@ -13,6 +13,8 @@
 - **第二轮硬化（2026-09-29）**：多账户（`webui_users.json` + `--add-user`，token 带 user/role）、CSRF 双提交（`wbui_csrf` + `X-CSRF-Token`，写 POST 校验，登录/登出豁免）、全局限流（每 IP 滑动窗口，超限 429，`--rate-limit`/env `WEBUI_RATE_LIMIT`，0=关）、SIGTERM 优雅停机清 PID。**修掉两个 main() 崩溃**：`ROOT` 是 `str` 却用 `ROOT / "..."`（→ `os.path.join`）；`Handler._load_auth` classmethod 被同名 instance method 覆盖（→ 改名 `_configure_auth`）。回归基线 **16 套 880 断言**。
 - ⭐ **`_test_webui_lab.py` 用 `Handler.__new__` 直调 `api_*`，绕过 do_GET/do_POST 且从不执行 main()** → 「单测全绿」≠「能启动」。main() 全链路由新增 `_test_webui_startup_lab.py`（真实 subprocess 启动）兜住。
 - 回环默认无认证是**刻意的**，任何改动不得破坏 `_test_webui_lab.py`（直接 `__new__` 调 api_*，不经 do_GET/do_POST）；新增端点须保持该测试通过。
+- **服务器 Docker Hub 不可达**（2026-09-29）：`docker build` 到 `FROM python:3.13-slim` 即 `i/o timeout`（宿主访问 github 正常）→ 改代码**不能靠重建镜像生效**，须把单文件以 bind 挂进容器；`docker cp` 进容器属临时，重建即丢。规则引擎证据写在 `/app/rules_<host>.json`（**不在卷内**）→ 重建前先拷出留档（会话内的 findings 因在 `.sessions` 卷而保留）。
+- **`submit` 提交稿模板随授权清单 `platform` 自适应**（`_submit_platform_profile`）：含「补天」→ 6 项模板（爱站权重/活动任务）；否则 → 厂商通用模板。曾写死成补天，导致漏洞盒子 YSRC 项目稿件出现不存在的必填字段（错误引导）。
 - 合规闸 `sys.exit(2)` **静默杀死请求线程**（SystemExit 不被 socketserver 捕）→ 必须 `_capture()` 兜，再从日志挑 `[BLOCK]/[FAIL]`
 - **Windows ADS**：`rules_x:port.json` 的 `:` 被 NTFS 当数据流 → 本体 0 字节但 `isfile()`/`getsize()` 全正常 → 一律 `safe_evidence_name()`
 - **内嵌 PAGE 必须 raw string + 脚本切片拼接**（否则 JS 的 `\n` 编译期被解成真换行）；**前端也要门禁**：`node --check` 只取 `<script>` 标签之间的 JS，并断言 `$('#id')` 与内联 onclick 函数名一致
