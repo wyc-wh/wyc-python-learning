@@ -10,6 +10,8 @@
 
 ## Web 控制台 / UI（HANDBOOK 十五~十五之四）
 - **发布硬化（2026-09-29）**：`webui.py` 已加 HMAC 签名 Cookie 登录；`REQUIRE_AUTH` 默认关（回环本地零摩擦，兼容靶场测试），非回环绑定或 `--require-auth` 时强制开；**无口令则 fail-closed 拒绝启动**（口令来自 env `WEBUI_AUTH_PASSWORD` 或 `webui_auth.json` PBKDF2 哈希，`--set-password` 引导，chmod 600，已被 .gitignore 忽略）。支持 `--tls-cert/--tls-key` 自终止 TLS、`--log-file` 轮转、`--pid-file`。`_capture` 已加全局 `_CAPTURE_LOCK` 防 stdout 并发串台。部署产物见 `deploy/`（systemd/ nginx / Docker / run_prod.sh）+ 根 `DEPLOY.md`。
+- **第二轮硬化（2026-09-29）**：多账户（`webui_users.json` + `--add-user`，token 带 user/role）、CSRF 双提交（`wbui_csrf` + `X-CSRF-Token`，写 POST 校验，登录/登出豁免）、全局限流（每 IP 滑动窗口，超限 429，`--rate-limit`/env `WEBUI_RATE_LIMIT`，0=关）、SIGTERM 优雅停机清 PID。**修掉两个 main() 崩溃**：`ROOT` 是 `str` 却用 `ROOT / "..."`（→ `os.path.join`）；`Handler._load_auth` classmethod 被同名 instance method 覆盖（→ 改名 `_configure_auth`）。回归基线 **16 套 880 断言**。
+- ⭐ **`_test_webui_lab.py` 用 `Handler.__new__` 直调 `api_*`，绕过 do_GET/do_POST 且从不执行 main()** → 「单测全绿」≠「能启动」。main() 全链路由新增 `_test_webui_startup_lab.py`（真实 subprocess 启动）兜住。
 - 回环默认无认证是**刻意的**，任何改动不得破坏 `_test_webui_lab.py`（直接 `__new__` 调 api_*，不经 do_GET/do_POST）；新增端点须保持该测试通过。
 - 合规闸 `sys.exit(2)` **静默杀死请求线程**（SystemExit 不被 socketserver 捕）→ 必须 `_capture()` 兜，再从日志挑 `[BLOCK]/[FAIL]`
 - **Windows ADS**：`rules_x:port.json` 的 `:` 被 NTFS 当数据流 → 本体 0 字节但 `isfile()`/`getsize()` 全正常 → 一律 `safe_evidence_name()`
@@ -28,6 +30,7 @@
 6. **隐私铁律**：凭据只记类别/次数/长度，**不记值也不记哈希**；API 响应只记字段名/条数/sha256
 7. **靶场必须自检 `status=None`**（忘 `verify_tls=False` → 假通过）；红时先分辨「数据脏」还是「代码错」
 8. **禁 bash / `python -c` 内联写含反引号的中文长文本**（踩过两次）→ 用 Write 写 `.py`；**字典库原料「不读就信」风险最高** → 构建脚本强制逐条定性
+9. ⭐ **「入口没被测」是最贵的盲区**：测试绕过入口（如 webui 用 `Handler.__new__` 绕过 main()）→ 入口里的类型错误 / 同名方法覆盖长期漏检，直到有人真跑一次才崩。**凡新增入口（CLI/启动/main），必配一条「真跑起来」的端到端测试**
 
 ## 判据与状态语义（HANDBOOK 十一~十三）
 - **「排除项」是五种状态**（五态清单见 HANDBOOK 判据库），压成一个「排除」= 把「没拿到证据」读成「查过了没问题」

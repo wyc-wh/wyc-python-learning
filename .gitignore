@@ -39,5 +39,6 @@ pentest-orchestrator/_appendix_*.md
 # 发布硬化：会话 HMAC 密钥与口令哈希（含敏感凭据，绝不可入库）
 pentest-orchestrator/webui_secret.json
 pentest-orchestrator/webui_auth.json
+pentest-orchestrator/webui_users.json
 # 部署环境文件（含口令，不入库）
 pentest-orchestrator/deploy/.env
