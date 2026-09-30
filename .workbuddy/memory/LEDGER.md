@@ -74,10 +74,17 @@
 - 教训：verify --rule 整组升级会把最后一次 evidence 套到同组全部条目 → 提交稿逐条核对
 - 提交侧待人工补：②归属 ICP ③首页截图 ⑤爱站权重 ⑥活动任务
 
-**15 个靶场 861 条全绿**：6 + 45 + 81 + 25 + 20 + 44 + 36 + 57 + 80 + 67 + 40 + 46 + 26 + 8 + 280
-（authgate / evidence_lint / coverage / rules / stack / authz / api_surface /
-service_version / p1 / closure / fp / **flow** / **engine_fix** / **envprobe** / webui）
-—— 2026-09-26 平台完善日：P0×4 根因修复（verify 逐条升级 / :80 环境探针 /
+**22 套 1011 断言全绿**（2026-09-30）：
+36 + 6 + 44 + 67 + 81 + 26 + 8 + 45 + 52 + 40 + 80 + 17 + 18 + 25 + 23 + 57 + 20 + 29 + **45** + 10 + 280 + 19
+（api_surface / authgate / authz / closure / coverage / engine_fix / envprobe /
+evidence_lint / flow / fp / p1 / **r001_csp** / recon_egress / rules /
+**scope_syntax** / service_version / stack / toolchain / **verify_location** / waf_gate /
+webui / webui_startup）
+—— 2026-09-30 新增 2 套：`_test_scope_syntax_lab`（作用域 DSL + 两实现一致性）、
+`_test_verify_location_lab`（复核记录按位置 + CLI 入口自检）；flow 由 46 → 52。
+
+**历史**：15 个靶场 861 条（2026-09-26 平台完善日）：6 + 45 + 81 + 25 + 20 + 44 + 36 +
+57 + 80 + 67 + 40 + 46 + 26 + 8 + 280 —— P0×4 根因修复（verify 逐条升级 / :80 环境探针 /
 静默失败兜底 / counterevidence 模板）+ receipt / submit --merge-rule / SARIF /
 R013 栈指纹扩展（Cookie 名/资源路径/X-*头）+ WebUI 接入 fp_review、credentials、待跟进下钻
 
@@ -87,6 +94,22 @@ R013 栈指纹扩展（Cookie 名/资源路径/X-*头）+ WebUI 接入 fp_review
 - 跑法：`PENTEST_NODE=<node.exe> python _test_*.py`；**node 缺失时 webui 的前端 JS
   语法闸会显式 SKIP 且不计入通过**（虚门禁比没门禁更危险），故设了才拿到 188
 
+## DXYSRC（漏洞盒子 / 丁香园安全应急响应中心，2026-09-30）
+
+- 授权编号 `DXYSRC-2026-DXY`；清单 `pentest-orchestrator/auth.dxy.json`（12 条红线逐条抄录）
+- 范围：`dxy.cn` / `jobmd.cn` / `biomart.cn` 主域+子域；`=dxy.com`、`=ask.dxy.com`、
+  `=mama.dxy.com` **仅该主机**；排除 `!index.dxy.cn`
+- 会话 `DXYSRC-2026-DXY-20260930-200821`；108 候选 →（通配基线 + sha256 折叠）→ 12 资产
+- **发现 3 条**：R003 ×2（`act.biomart.cn` / `xiaoyuan.jobmd.cn`，低危 3.1，已 confirmed）、
+  R009 ×1（`act.biomart.cn` 框架指纹 Laravel，detected，**不进稿**）
+- 产物：`out/DXYSRC-2026-DXY-全链路报告.md`（覆盖度 98.1/100 A 级）、
+  `out/DXYSRC-提交稿-R003.md`（2 条）
+- **提交侧待人工补**：归属证明（ICP/版权/主体全称）、首页截图含地址栏、厂商侧定级
+- **缺口**：无登录账号 → R010/R011、越权/IDOR、业务逻辑不可达；`mama.dxy.com` 需微信内置
+  浏览器，未覆盖；`ask.dxy.com` H5 未单独跑
+- 本轮顺带修掉 4 个平台缺陷：R001 CSP 假阳性 / R001 证据被 `val[:80]` 截断（**尾部被伪造成
+  疑似非法 token**）/ R009 缺 counterevidence（违反 D-01）/ WAF 特征库补 2 条（122→124）
+
 ## 待办（优先级降序）
 
 0. ~~平台完善清单~~ → **2026-09-26 晚全部代码项完成**（P0×4 根因 + receipt/merge-rule/SARIF/
@@ -95,10 +118,17 @@ R013 栈指纹扩展（Cookie 名/资源路径/X-*头）+ WebUI 接入 fp_review
    剩执行项：jxnu 剩余 9 资产核查、测试账号申请模板
 1. 提交回执闭环（**receipt 子命令已落地**，待实战回填平台结论）
 2. ikuai8 的 `demo.` / `icc.` 登录态验证
-3. **修 `target_in_scope` 两处实现不一致**：`orchestrator` 版**不**剥端口 /
-   `rules_engine` 版会剥 → 带端口的 target 在 init 与 check 两侧判定相反，
-   coverage 的 `hosts_missing` 会把已核查的 `host:port` 误报为缺失。
-   **动它要改 coverage 读数语义，需单独评估**
-4. **Web 端仍未接** `fp_review`（驳回风险预演）与 `credentials`（登录态）——
+3. ~~**修 `target_in_scope` 两处实现不一致**~~ → **2026-09-30 已修**：抽出
+   `scope_match.py` 作为唯一实现（`orchestrator` / `rules_engine` / `webui` 全 import），
+   同时新增 `=host`（仅该主机）/`!host`（排除）语法；`_test_scope_syntax_lab.py` 锁
+   「两实现结论必须一致」。`coverage.hosts_missing` 的 `host:port` 语义需在下次覆盖度
+   变更时复核（当前 rules_engine 侧保留剥端口历史语义）。
+4. ~~**复核记录按 rule_id 单条存放导致多位置串稿**~~ → **2026-09-30 已修**：
+   `cvss.norm_verify_key` / `find_verification`，存储改「每处发现一份记录」，
+   顶层不写 level（fail-closed）；靶场 `_test_verify_location_lab.py`。
+5. **Web 端仍未接** `fp_review`（驳回风险预演）与 `credentials`（登录态）——
    规则引擎 / lint / coverage 已于 2026-09-23 接入（②卡片）
-5. XBEN 外部基准（只读方法学下分数会极低，但这本身把「合规代价」量化出来）
+6. **本轮平台改动未同步线上**：`cvss.py` / `orchestrator.py` / `evidence_lint.py` /
+   `rules_engine.py` / `scope_match.py` / `rules/` / `.gitattributes` 需 `docker cp` +
+   重启（`orchestrator.py`、`rules/` 是 bind 挂，宿主直接覆盖即可）
+7. XBEN 外部基准（只读方法学下分数会极低，但这本身把「合规代价」量化出来）

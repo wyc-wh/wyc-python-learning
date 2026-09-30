@@ -706,7 +706,88 @@ CLI 截图只能截视口顶部；而 Read 会把大图缩到看不清。做法�
   （曾对着旧进程连截两张「没修好」的图）
 - e2e 里 `[FAIL]` 是合规闸自身日志行（升级需证据提示），以 `exit=0` + 全 PASS 为准
 
-## 十六、提交记录
+## 十六、人工复核记录必须按「位置」存放（2026-09-30 · DXYSRC 提交稿暴露）
+
+### 缺陷两条（都已实际发生，都会直接损坏提交可信度）
+1. **多位置复核互相串稿**：`_verify_rule` 曾 `ver[rule_id] = {...}` 单条存放 ——
+   先复核 A 位置、再复核 B 位置，**B 覆盖 A**（只有一份 `evidence`）。提交稿里
+   `act.biomart.cn` 条目印出的是 `xiaoyuan.jobmd.cn` 的复核取证。
+   → 厂商按稿复核会对不上，驳回的同时损耗提交者信誉。
+2. **升级一处连带全组进稿**（更危险）：所有消费方都按 `rule_id` 取 `level` →
+   复核 A 位置后，**同规则未复核的 B/C/D 也一起被标 `confirmed`** 进入提交稿 /
+   SARIF / 报告表格。等于把没验过的当验过的交出去。
+
+### 契约
+```
+session["rule_verifications"][rule_id] = {
+    "scope": "location" | "group",
+    "records": { "<站点>|<归一化路径>": {level, evidence, note, host,
+                                        location, rule_id, verified_at, scope} },
+    "locations": [...]   # 历史已复核位置的**并集**（逐条复核不该抹掉前一条痕迹）
+    "updated_at": ...
+}
+```
+- **顶层刻意不写 `level`/`evidence`**。任何遗漏改造的旧消费方
+  `.get("level", "detected")` 会回落到「疑似」——**失败方向安全**：
+  宁可不提交，也不能把没复核的当已复核。
+- 查询唯一入口 `cvss.find_verification(verifications, rule_id, host, location)`；
+  未登记的位置**直接返回 `None`，不退回规则级**（那正是串稿来源）。
+- 旧格式（顶层有 `level`、无 `records`）只作历史兼容读取 → `has_legacy_verification()`
+  为真时 `submit` **明写告警**「旧格式、位置不精确，请逐条重登记」。
+
+### 键的构造（`cvss.norm_verify_key`）—— 两个必须都在键里
+- **站点**：`_norm_location` 会把 URL 剥成纯路径，于是
+  `https://act.biomart.cn/` 与 `https://xiaoyuan.jobmd.cn/` **都归一成 `/`**。
+  只按路径做键，两站同规则同路径必然互串。
+- **路径**：查询串剥离、大小写不敏感、`/.env` 与 `https://h/.env` 必须同键。
+- `location` 本身是 URL 时**以其 host 为准**，否则退回传入的 `rule_checks` 键 ——
+  两种数据形态都存在：真实规则引擎给的是相对路径（站点来自 `rule_checks` 键），
+  导入/靶场数据给的是完整 URL 且主机可能与 `rule_checks` 键不同。只取一个都会折叠错。
+- 空位置（`"host|"`）与根路径（`"host|/"`）必须分开。
+
+### 消费点清单（改存储/查询时必须全部跟）
+`orchestrator`：submit 置信度判定、`_submission_block` 复核段、report 表格置信度、
+report 明细复核行、SARIF `report --format sarif`；
+`evidence_lint.lint_result`（EL007 豁免粒度 —— 曾只按规则回放，把未复核位置的
+EL007 阻断项一起豁免掉）。
+`verify --host <主机>`：同规则同路径出现在多台主机时用于消歧（只按 `--location`
+会一次命中多台主机，这是串稿的入口之一）。
+
+### 迁移范式（不要重新发请求）
+证据原文完整躺在 `.sessions/<id>.audit.log` 的 `RULES-VERIFY` 事件里
+（格式：`规则发现 <RID> @ <loc> 置信度升级为 <level>（n 条） —— <evidence>`）。
+写脚本从审计链抽回原文、按位置重登记 —— 这是**存储迁移，不是新取证**，
+不该、也不需要重新发一次请求。迁移后必须 dump 校验：`scope=location`、
+顶层无 `level`、记录数 == 位置数、每条 `evidence` 含本机主机名。
+
+### 顺带修掉的相邻缺陷（同一轮 DXYSRC）
+- **R001 CSP 假阳性**：旧判据要求值里含 `*-src` → `Content-Security-Policy:
+  frame-ancestors ...` 被误判「语法非法」。改 `_csp_problem()` 按**指令列表**校验
+  （`frame-ancestors`/`sandbox`/`report-uri` 合法；裸 scheme 缺冒号才非法）。
+- **证据被 `val[:80]` 截断**：真实值 `...lctest.cn:* https://identity-app.linkedcare.cn:* ...`
+  被截成 `...lctest.cn:* http` —— **尾部被伪造成一个疑似非法 token**，等于自己造了一条
+  不存在的证据。证据字段一律存完整值，只在展示处截。
+- **R009 缺 counterevidence**：框架指纹给了「使用含已知漏洞的组件」中危，
+  但只有指纹没有版本 → 违反 D-01。补 `counterevidence`：只能证明用了该框架，
+  不证明版本受影响。
+
+### ⚠️ 两个「本地全绿、真跑才崩」的工具坑
+1. **追加式补丁脚本不幂等**：`new` 完整包含 `old`（在 `--location` 后插 `--host`）时，
+   `count(old)==1` **不足以保证安全** —— 重跑一次就再插一遍。实测被插 **3 份**
+   `--host` → `argparse.ArgumentError: conflicting option string: --host`
+   **整个 CLI 起不来**，而所有函数级单测全绿（它们直接构造 args、不走 argparse）。
+   幂等判据必须**先查 `new` 是否已存在**。
+   → 对策已固化：`_test_verify_location_lab.py` ⑥ 段自动发现全部子命令并逐个跑
+   `--help`（16 个），专抓 argparse 冲突。
+2. **CRLF 让补丁静默失效**：本仓 765 个 `.py` 是 LF、**8 个是 CRLF**（历史写入工具
+   留下的）。按字节匹配时 CRLF 文件上 `count(old)==0` → **脚本报成功但补丁没打上**。
+   → 补丁脚本统一 `newline=None` 读（归一成 `\n`）、`newline="\n"` 写；
+   `.gitattributes` 加 `*.py text eol=lf` 并把那 8 个文件规范化。
+3. **子进程输出跨编码**：Windows 子进程 stdout 走控制台代码页（cp936），父进程
+   `text=True` 按 utf-8 解会 `UnicodeDecodeError: 0xd7`。→ 子进程给
+   `PYTHONIOENCODING=utf-8`/`PYTHONUTF8=1`，父进程 `encoding="utf-8", errors="replace"`。
+
+## 十七、提交记录
 
 fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）fb04a82（strix 第 2、3 项：机器观测层 + 排除判据库）· a0dca4b（记忆分层：详情下沉 HANDBOOK、状态拆出 LEDGER）
 b65074c（修 webui scan 分支 `payload` 未定义必崩点）· 82a6592（只读规则引擎接入 Web 控制台）

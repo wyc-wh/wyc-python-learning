@@ -1,12 +1,21 @@
 # 项目记忆 - 雷神之锤自动挖洞平台（速查）
 
-> **详情层 `HANDBOOK.md`**：手法/规则引擎/lint/指纹/覆盖度/登录态/闭环/观测层/判据库/工程纪律/**补天SRC 十四之二**/**WebUI 十五~十五之四**；过程 `2026-09-2x.md`，待办 `LEDGER.md`。
+> **详情层 `HANDBOOK.md`**：手法/规则引擎/lint/指纹/覆盖度/登录态/闭环/观测层/判据库/工程纪律/**补天SRC 十四之二**/**WebUI 十五~十五之五**/**复核记录按位置 十六**；过程 `2026-09-2x.md`，待办 `LEDGER.md`。
 
 ## 骨架
 - 工程结构 / 子命令 / 合规闸 / CVSS / 工具清单 → **HANDBOOK 十四·骨架清单**
+- ⭐ **作用域匹配只有一份实现 `scope_match.py`**（`host_match` / `target_in_scope`）：`example.com`=主域+子域；`.example.com`=后缀；CIDR；**`=host`**=仅该主机不含子域；**`!host`**=排除（优先级最高）。`orchestrator` / `rules_engine` / `webui._scope_item_kind` 全部 import 它 —— 曾各写一份，语义必漂移（假绿灯）。新增 DSL 必须同步 `_test_scope_syntax_lab.py`（含「两实现结论必须一致」断言）
 - 置信度 `detected🔍`→`confirmed✅`→`exploited💥`；**detected 不得提交 SRC**。`rate_findings` 重算会重置置信度 → `generate_report` 必须回放 `session["verifications"]`
 - **本机 shell 四坑**（命令模板见 HANDBOOK 十四）：① git 用 PortableGit 全路径 ② **沙箱 bash 的 PATH 每条命令被 shim 重置** → 每条命令前置 export PATH ③ **PowerShell 抓不到 stdout**，删文件走 Python `os.remove` ④ **`curl -w %{size_download}` 不可信** → 落文件再 `wc -c` + 查 `</html>`
 - **同文件多处 Edit 不要批量发**：单条消息里多个 `Edit` 只有第一条稳定落地，其余可能不生效或错配 → **一次性 Python 替换脚本（每条 `count==1` 断言）**；old_string 含标题行时 new_string 必须把标题原样带回（曾吞掉「## 十六」标题）
+
+## ⭐ 人工复核记录（置信度回放）必须按位置
+- **存储**：`session["rule_verifications"][rule_id] = {"scope", "records": {"站点|归一化路径": {...}}, "locations"([并集]), "updated_at"}`。**顶层刻意不写 `level`/`evidence`** → 遗漏改造的旧消费方 `.get("level","detected")` 回落到「疑似」，失败方向安全。
+- **查询唯一入口** `cvss.find_verification(verifications, rule_id, host, location)`：命中 `records` 才返回，**未登记直接 `None`（不退回规则级）**；旧格式（顶层有 `level`、无 `records`）仅作历史兼容，`submit` 出稿时明写「旧格式、位置不精确」告警（`has_legacy_verification`）。
+- **键必须带站点**（`norm_verify_key`）：`_norm_location` 把 URL 剥成纯路径，两站的 `/` 会归一成同一个值；且 `location` 本身是 URL 时**以其 host 为准**（导入数据里 location 主机可能 ≠ `rule_checks` 键）。空位置与根路径必须分开。
+- 消费点（改存储/查询时全部要跟）：`orchestrator` submit 置信度+复核段、report 表格+明细、SARIF `report --format sarif`、`evidence_lint.lint_result`（EL007 豁免粒度）；`verify --host` 用于同规则同路径出现在多台主机时消歧。
+- **曾犯**：按 `rule_id` 单条存 → ① 多位置复核后写覆盖先写 → 提交稿 B 的条目印出 A 的取证；② **升级一处 → 同规则未复核的位置一起进提交稿/SARIF/报告**（把没验过的当验过的交出去）。靶场 `_test_verify_location_lab.py`。
+- **迁移范式**：证据原文在 `.sessions/<id>.audit.log` 的 `RULES-VERIFY` 里 → 从审计链抽回按位置重登记，**不重新发请求**（存储迁移 ≠ 新取证）。
 
 ## Web 控制台 / UI（HANDBOOK 十五~十五之四）
 - **发布硬化（2026-09-29）**：`webui.py` 已加 HMAC 签名 Cookie 登录；`REQUIRE_AUTH` 默认关（回环本地零摩擦，兼容靶场测试），非回环绑定或 `--require-auth` 时强制开；**无口令则 fail-closed 拒绝启动**（口令来自 env `WEBUI_AUTH_PASSWORD` 或 `webui_auth.json` PBKDF2 哈希，`--set-password` 引导，chmod 600，已被 .gitignore 忽略）。支持 `--tls-cert/--tls-key` 自终止 TLS、`--log-file` 轮转、`--pid-file`。`_capture` 已加全局 `_CAPTURE_LOCK` 防 stdout 并发串台。部署产物见 `deploy/`（systemd/ nginx / Docker / run_prod.sh）+ 根 `DEPLOY.md`。
@@ -46,7 +55,11 @@
 6. **隐私铁律**：凭据只记类别/次数/长度，**不记值也不记哈希**；API 响应只记字段名/条数/sha256
 7. **靶场必须自检 `status=None`**（忘 `verify_tls=False` → 假通过）；红时先分辨「数据脏」还是「代码错」
 8. **禁 bash / `python -c` 内联写含反引号的中文长文本**（踩过两次）→ 用 Write 写 `.py`；**字典库原料「不读就信」风险最高** → 构建脚本强制逐条定性
-9. ⭐ **「入口没被测」是最贵的盲区**：测试绕过入口（如 webui 用 `Handler.__new__` 绕过 main()）→ 入口里的类型错误 / 同名方法覆盖长期漏检，直到有人真跑一次才崩。**凡新增入口（CLI/启动/main），必配一条「真跑起来」的端到端测试**
+9. ⭐ **「入口没被测」是最贵的盲区**：测试绕过入口（如 webui 用 `Handler.__new__` 绕过 main()）→ 入口里的类型错误 / 同名方法覆盖长期漏检，直到有人真跑一次才崩。**凡新增入口（CLI/启动/main），必配一条「真跑起来」的端到端测试**（`_test_verify_location_lab.py` ⑥ 段把「所有子命令 `--help`」自动发现并全跑一遍，专抓 argparse 冲突）
+10. **一次性补丁脚本必须幂等**：`new` 完整包含 `old`（追加式编辑）时，`count(old)==1` **不足以保证安全**，重跑会再插一遍 —— 实测把 `--host` 插了 3 份，`argparse` 直接 `conflicting option string`，**整个 CLI 起不来而单测全绿**。幂等判据要**先查 `new` 是否已存在**。
+11. **补丁脚本必须对换行符不敏感**：本仓 765 个 `.py` 是 LF、**8 个是 CRLF**，按字节匹配时 CRLF 文件 `count(old)==0` → **报成功但没打上**。统一 `newline=None` 读（归一 `\n`）+ `newline="\n"` 写；`.gitattributes` 已加 `*.py text eol=lf`。
+12. **子进程输出跨编码要显式指定**：Windows 子进程 stdout 走控制台代码页（cp936），父进程 `text=True` 按 utf-8 解 `UnicodeDecodeError: 0xd7` → 子进程给 `PYTHONIOENCODING=utf-8`/`PYTHONUTF8=1`，父进程 `encoding="utf-8", errors="replace"`。
+13. **通配 DNS 下「解析成功」≠「真实资产」**：3 个根域全泛解析，108 候选全解析成功其中 66 个只是同一个兜底页 → 先用随机不存在主机名建基线排除，再按响应 sha256 折叠同款 vhost。
 
 ## 判据与状态语义（HANDBOOK 十一~十三）
 - **「排除项」是五种状态**（五态清单见 HANDBOOK 判据库），压成一个「排除」= 把「没拿到证据」读成「查过了没问题」
@@ -57,4 +70,4 @@
 - **lint 第二道闸** EL030~EL036（EL035/EL036 警告级**不阻断提交**）；**补天 SRC 平台规则**（不需核备案 / 无白名单 / 提交 6 项）→ **HANDBOOK 十四之二**
 
 ## 台账
-→ **已拆到 `LEDGER.md`**。ikuai8 = F-10 高危（7.4/7.7）；jiaoyu = J-01 中危，匿名侧扎实、登录态未覆盖；**回归基线 15 靶场 861 条全绿**（0926 完善日，明细见 LEDGER）。
+→ **已拆到 `LEDGER.md`**。ikuai8 = F-10 高危（7.4/7.7）；jiaoyu = J-01 中危，匿名侧扎实、登录态未覆盖；**DXYSRC（漏洞盒子/丁香园）= 已出稿 2 条 R003（低危 3.1，`act.biomart.cn` + `xiaoyuan.jobmd.cn`），覆盖度 98.1/100 A 级；无登录账号 → 越权/IDOR/业务逻辑不可达，`mama.dxy.com` 需微信内置浏览器未覆盖**。**回归基线 22 套 1011 断言全绿**（2026-09-30，明细见 LEDGER）。
