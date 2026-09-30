@@ -28,6 +28,7 @@
 - ⭐ **用自己出口 IP 大规模扫描会被 WAF 拉黑**（4 万请求 → 本机访问 ezviz.com 变 403）→ 后续 matched=0 全是打在 WAF 上的假阴性。**扫描中必须定期 curl 基线 URL 自检，一变 403 立刻停**；保守速率（30rps）对 WAF 仍过高。
 - **WAF 拦截页会返回 200**：EdgeOne 拦截页（body 含「请求已被站点的安全策略拦截」）状态码就是 200 → 只看状态码会当成正常页。
 - **AWS ELB 悬空 CNAME 不可接管**：DNS 带熵后缀（`-166682297`）→ hash 不可创建，can-i-take-over 判 not possible。只能报「DNS 残留」，**不得写成子域接管**。
+- **平台侧已配套四个机制**（2026-09-30）：① `assets` 子命令被动资产面发现（crt.sh/wayback，`recon_passive.collect(domain)`，候选项分范围内/外）② `egress_guard` 出口自检（基线快照→复核→blocked 时只许写「未取得有效证据」，autorun 内置）③ WAF 闸门（取证层每条响应挂 `rec["classify"]`，引擎 `_demote_waf_blocked` 把拦截页证据降级 needs_follow_up）④ `egress_config()` 代理出口（auth.json `egress` 段 / `PENTEST_PROXY` 优先，nuclei `-proxy` + 规则引擎）。
 
 ## 证据与工程纪律（HANDBOOK 十四 · 20+ 条，只留最易再犯）
 1. **「缺失」与「值为 None」字面可区分**：缺失写 `<未声明>` + `*_present`。**属性不存在的中间表示不能复用「有值」的值域**（曾把缺失读成 `SameSite=None`）
