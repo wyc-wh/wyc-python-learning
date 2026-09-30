@@ -3,6 +3,11 @@
 # 部署脚本是在服务器宿主（Linux）直接执行的，故强制 LF。
 *.sh text eol=lf
 
+# Python 固定 LF：core.autocrlf=true 会把 .py 签出成 CRLF，而「一次性补丁脚本」
+# 是按文本精确匹配改写源码的 —— CRLF 会让匹配静默 0 命中，补丁没打上却报成功
+# （2026-09-30 实测：13 处替换里 1 处因 evidence_lint.py 是 CRLF 而失败）。
+*.py text eol=lf
+
 # 批处理是 Windows 侧启动器，反过来必须 CRLF
 *.bat text eol=crlf
 *.cmd text eol=crlf

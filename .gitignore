@@ -20,6 +20,8 @@ desktop.ini
 # 本地备份
 *.real.bak
 *.bak
+# 带后缀的备份（如 `X.md.bak-串稿`）—— `*.bak` 匹配不到这类
+*.bak-*
 
 # 登录态凭据（P4）—— 含真实会话 Cookie，绝不可入库
 cred*.json
@@ -31,10 +33,16 @@ pentest-orchestrator/_cred*
 # 真实目标取证产物（与 .sessions/ 同类：含真实主机名、路径、响应元数据，属本地产物）
 # 规则检查单资产快照
 pentest-orchestrator/rules_*.json
+pentest-orchestrator/out/rules_*.json
 # 真实目标运行日志（_rerun_* / _r012_* / _r013_* 等）
 pentest-orchestrator/_*.log
+pentest-orchestrator/out/_*.log
 # 真实目标报告附录（提交稿素材，按目标生成）
 pentest-orchestrator/_appendix_*.md
+# out/ 下的过程脚本与原始清单/文本快照 —— out/ 只入库**最终交付物**
+# （报告 / 提交稿 / 覆盖度 / 待跟进 json）。曾因 `git add out/` 把历史
+# 中间产物与备份一起带进暂存区（2026-09-30）。
+pentest-orchestrator/out/_*
 
 # 发布硬化：会话 HMAC 密钥与口令哈希（含敏感凭据，绝不可入库）
 pentest-orchestrator/webui_secret.json
