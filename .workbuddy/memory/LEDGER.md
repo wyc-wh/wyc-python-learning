@@ -74,7 +74,7 @@
 - 教训：verify --rule 整组升级会把最后一次 evidence 套到同组全部条目 → 提交稿逐条核对
 - 提交侧待人工补：②归属 ICP ③首页截图 ⑤爱站权重 ⑥活动任务
 
-**22 套 1011 断言全绿**（2026-09-30）：
+**22 套 1028 断言全绿**（2026-09-30；同日复核修正：原写 1011 是**漏算** `_test_r001_csp_lab.py` 的 17 条，明细相加本就是 1028）：
 36 + 6 + 44 + 67 + 81 + 26 + 8 + 45 + 52 + 40 + 80 + 17 + 18 + 25 + 23 + 57 + 20 + 29 + **45** + 10 + 280 + 19
 （api_surface / authgate / authz / closure / coverage / engine_fix / envprobe /
 evidence_lint / flow / fp / p1 / **r001_csp** / recon_egress / rules /
@@ -128,7 +128,9 @@ R013 栈指纹扩展（Cookie 名/资源路径/X-*头）+ WebUI 接入 fp_review
    顶层不写 level（fail-closed）；靶场 `_test_verify_location_lab.py`。
 5. **Web 端仍未接** `fp_review`（驳回风险预演）与 `credentials`（登录态）——
    规则引擎 / lint / coverage 已于 2026-09-23 接入（②卡片）
-6. **本轮平台改动未同步线上**：`cvss.py` / `orchestrator.py` / `evidence_lint.py` /
-   `rules_engine.py` / `scope_match.py` / `rules/` / `.gitattributes` 需 `docker cp` +
-   重启（`orchestrator.py`、`rules/` 是 bind 挂，宿主直接覆盖即可）
+6. **平台改动同步线上**（**阻断：需 `WB_SSH_PW`**）：工具已就绪 `pentest-orchestrator/deploy/sync_online.py`（宿主暂存 → `docker cp` → `docker restart`
+   → 4 项验证：模块可导入 / `norm_verify_key`·`find_verification` 存在 / `verify --host`
+   存在 / 公网可达；`orchestrator.py` 自动识别为 bind，只覆盖宿主那份）。`--dry-run`
+   已确认 9 个文件。⚠️ **密钥登录已被服务器移除**（`~/.ssh/id_ed25519` →
+   `Permission denied (publickey,password)`）→ 只能带口令。
 7. XBEN 外部基准（只读方法学下分数会极低，但这本身把「合规代价」量化出来）

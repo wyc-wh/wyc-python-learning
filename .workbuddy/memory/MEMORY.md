@@ -60,6 +60,7 @@
 11. **补丁脚本必须对换行符不敏感**：本仓 765 个 `.py` 是 LF、**8 个是 CRLF**，按字节匹配时 CRLF 文件 `count(old)==0` → **报成功但没打上**。统一 `newline=None` 读（归一 `\n`）+ `newline="\n"` 写；`.gitattributes` 已加 `*.py text eol=lf`。
 12. **子进程输出跨编码要显式指定**：Windows 子进程 stdout 走控制台代码页（cp936），父进程 `text=True` 按 utf-8 解 `UnicodeDecodeError: 0xd7` → 子进程给 `PYTHONIOENCODING=utf-8`/`PYTHONUTF8=1`，父进程 `encoding="utf-8", errors="replace"`。
 13. **通配 DNS 下「解析成功」≠「真实资产」**：3 个根域全泛解析，108 候选全解析成功其中 66 个只是同一个兜底页 → 先用随机不存在主机名建基线排除，再按响应 sha256 折叠同款 vhost。
+14. ⭐ **汇总运行器/解析器本身也是「入口」，同样要 fail-closed**：22 套靶场的结果行有**四种风格**（`结果：N 通过 / M 失败`、`结果: N/M 通过`、`==== xx 靶场: N 通过 / M 失败 ====`、`[xx-lab] N/M 通过`），运行器只写一种正则 → **5 套全绿被报成「异常」**；若不核对基线总数会误判成代码坏了。对策：双正则取**最靠后**匹配 + 取不到仍判「异常」**绝不静默算过** + **必须核对断言总数基线**（防「测试被删掉一半」也显示全绿）。一键跑：`PYTHONUTF8=1 <envs/default python> pentest-orchestrator/_run_regress.py`。
 
 ## 判据与状态语义（HANDBOOK 十一~十三）
 - **「排除项」是五种状态**（五态清单见 HANDBOOK 判据库），压成一个「排除」= 把「没拿到证据」读成「查过了没问题」
@@ -70,4 +71,4 @@
 - **lint 第二道闸** EL030~EL036（EL035/EL036 警告级**不阻断提交**）；**补天 SRC 平台规则**（不需核备案 / 无白名单 / 提交 6 项）→ **HANDBOOK 十四之二**
 
 ## 台账
-→ **已拆到 `LEDGER.md`**。ikuai8 = F-10 高危（7.4/7.7）；jiaoyu = J-01 中危，匿名侧扎实、登录态未覆盖；**DXYSRC（漏洞盒子/丁香园）= 已出稿 2 条 R003（低危 3.1，`act.biomart.cn` + `xiaoyuan.jobmd.cn`），覆盖度 98.1/100 A 级；无登录账号 → 越权/IDOR/业务逻辑不可达，`mama.dxy.com` 需微信内置浏览器未覆盖**。**回归基线 22 套 1011 断言全绿**（2026-09-30，明细见 LEDGER）。
+→ **已拆到 `LEDGER.md`**。ikuai8 = F-10 高危（7.4/7.7）；jiaoyu = J-01 中危，匿名侧扎实、登录态未覆盖；**DXYSRC（漏洞盒子/丁香园）= 已出稿 2 条 R003（低危 3.1，`act.biomart.cn` + `xiaoyuan.jobmd.cn`），覆盖度 98.1/100 A 级；无登录账号 → 越权/IDOR/业务逻辑不可达，`mama.dxy.com` 需微信内置浏览器未覆盖**。**回归基线 22 套 1028 断言全绿**（2026-09-30，明细见 LEDGER；一键跑 `_run_regress.py`）。

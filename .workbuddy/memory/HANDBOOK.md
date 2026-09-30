@@ -771,7 +771,7 @@ EL007 阻断项一起豁免掉）。
   但只有指纹没有版本 → 违反 D-01。补 `counterevidence`：只能证明用了该框架，
   不证明版本受影响。
 
-### ⚠️ 两个「本地全绿、真跑才崩」的工具坑
+### ⚠️ 四个「本地全绿、真跑才崩」的工具坑
 1. **追加式补丁脚本不幂等**：`new` 完整包含 `old`（在 `--location` 后插 `--host`）时，
    `count(old)==1` **不足以保证安全** —— 重跑一次就再插一遍。实测被插 **3 份**
    `--host` → `argparse.ArgumentError: conflicting option string: --host`
@@ -786,6 +786,11 @@ EL007 阻断项一起豁免掉）。
 3. **子进程输出跨编码**：Windows 子进程 stdout 走控制台代码页（cp936），父进程
    `text=True` 按 utf-8 解会 `UnicodeDecodeError: 0xd7`。→ 子进程给
    `PYTHONIOENCODING=utf-8`/`PYTHONUTF8=1`，父进程 `encoding="utf-8", errors="replace"`。
+4. **汇总运行器的解析器太窄 → 把全绿的套报成「异常」**：22 套靶场结果行有四种风格
+   （见 MEMORY 纪律 14），运行器只写一种正则 → 5 套**全绿被判异常**；若不核对
+   **断言总数基线（1028）** 就会误判成「代码坏了」（反向也危险：测试被删一半仍显全绿）。
+   → 双正则取**最靠后**匹配、取不到仍判异常（fail-closed）、**必须核对总数基线**。
+   固化在 `pentest-orchestrator/_run_regress.py`。
 
 ## 十七、提交记录
 
