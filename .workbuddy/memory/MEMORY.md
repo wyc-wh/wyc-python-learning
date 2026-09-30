@@ -23,6 +23,13 @@
 - **前端三个静默坑**：① 后端字段缺失 → `undefined||0` 印出「假事实」（「排除项 0 条」且无报错）② 内联 onclick 传不了对象（双引号提前闭合属性）→ 只传 key ③ 状态变了标签必须跟着变（如主题按钮文案）
 - 驾驶舱数据后端驱动：风险四档**只计发现项**；严重度**归一**；越界数**只认审计链 BLOCK/REJECT**；**前端格式校验复用后端 `orch.validate_scope`**（假绿灯比不校验更危险）
 
+## 工具链：subfinder / ffuf（2026-09-30 补齐，详见 2026-09-30.md）
+- 装法：本机 `install_extra_tools.py --only subfinder,ffuf`；服务器 `deploy/install_linux_tools.sh`（宿主 `/opt/pentest-tools/bin` → `docker cp` 进容器 `/usr/local/bin`）。**容器内不要 chmod**（uid 999 会 Operation not permitted，带 `set -e` 脚本会中断）；docker cp 已保留 755。
+- `assets` 自动带 subfinder（`--no-subfinder` 关）：ys7.com 52 → **141 个候选**。⚠️ subfinder 输出混 ANSI 颜色的 `[INF]` 行（**行首是 ESC 不是 `[`**）→ 先剥 `\x1b[...m` 再按主机名正则过滤。
+- `fuzz` 子命令（ffuf）三重门禁：范围内 / `allow_fuzz` 或 `--confirm` / rate≤100·threads≤20 硬 clamp。**软 404 必须靠随机路径基线 `-fs` 过滤**，否则整站返回同一 200 页的站点会满屏假阳性；socks5 下取不到基线要标 `skipped`，不假装过滤过。
+- 报告 `_trust_section()` 渲染「## 结果可信度（出口自检 / WAF 闸门）」：出口非 ok 强制写「未取得有效证据」，禁止写「未发现问题」；未自检也要明写「可信度未经校验」。`GET /api/tools` 看工具链状态。
+- ⚠️ 换行符：Windows `core.autocrlf=true` 会把 `*.sh` 签出成 CRLF → 服务器 `sh` 报 `^M`。已加 `.gitattributes`（`*.sh eol=lf`）。
+
 ## 扫描出口与 WAF（2026-09-30 新增，详见 2026-09-30.md）
 - ⭐ **境外扫描器打中国目标会被地域封锁**（萤石：境外 403 / 国内 200）→ 结果大面积假阴性。解法：`ssh -R 1080 -N`（反向**动态**转发）让服务器走本机国内出口，nuclei `-proxy socks5://127.0.0.1:1080`；**nuclei 必须装在宿主**（容器内连不到宿主 127.0.0.1）。
 - ⭐ **用自己出口 IP 大规模扫描会被 WAF 拉黑**（4 万请求 → 本机访问 ezviz.com 变 403）→ 后续 matched=0 全是打在 WAF 上的假阴性。**扫描中必须定期 curl 基线 URL 自检，一变 403 立刻停**；保守速率（30rps）对 WAF 仍过高。
