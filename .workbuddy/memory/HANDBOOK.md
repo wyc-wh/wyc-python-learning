@@ -792,6 +792,60 @@ EL007 阻断项一起豁免掉）。
    → 双正则取**最靠后**匹配、取不到仍判异常（fail-closed）、**必须核对总数基线**。
    固化在 `pentest-orchestrator/_run_regress.py`。
 
+## 十六之二、线上热更同步（不能重建镜像时）
+
+**前提**：服务器到 Docker Hub 不可达（`docker build` 到 `FROM python:3.13-slim` 即
+`i/o timeout`）→ **改代码不能靠重建镜像生效**，只能把文件送进容器。工具：
+`pentest-orchestrator/deploy/sync_online.py`。
+
+### 容器内三类路径（分类错 = 静默失败）
+
+| 类型 | 例子 | 正确做法 |
+|---|---|---|
+| 只读 bind | `/app/orchestrator.py`、**`/app/rules`（整目录）**、`/app/fp_review.py`、`/app/tools`、`/app/auth.json`、`/app/webui_auth.json`、`/app/webui_secret.json` | 写**宿主源文件**即生效；对它 `docker cp` 会报 `marked read-only`（**假警报**） |
+| 可写 bind | `/app/.sessions`、`/var/log/webui` | 同上 |
+| 镜像内 | `cvss.py`、`evidence_lint.py`、`rules_engine.py`、`webui.py`、`scope_match.py` | 先传宿主暂存 → `docker cp` 进容器 |
+
+`rules_engine.py` 是**镜像内文件**，而 `rules/` 是**目录 bind** —— 名字像，处置相反，
+别混。
+
+### 实测挂载表（2026-09-30，10 个）
+
+```
+/opt/pentest-tools                     => /app/tools              (RW=false)
+/opt/pentest-config/sessions           => /app/.sessions          (RW=true)
+/opt/pentest-config/auth.json          => /app/auth.json          (RW=false)
+/opt/pentest-config/webui_auth.json    => /app/webui_auth.json    (RW=false)
+/opt/pentest-config/webui_secret.json  => /app/webui_secret.json  (RW=false)
+/opt/pentest-orchestrator/fp_review.py => /app/fp_review.py       (RW=false)
+/opt/pentest-orchestrator/orchestrator.py => /app/orchestrator.py (RW=false)
+/opt/pentest-orchestrator/rules        => /app/rules              (RW=false)
+/opt/pentest-orchestrator/CyberSecurity-Skills-master => /CyberSecurity-Skills-master (RW=false)
+/var/log/webui                         => /var/log/webui          (RW=true)
+```
+
+### 两条硬规则（都来自实测翻车）
+
+1. ⭐ **bind 清单必须现查，不能硬编码**。首版只硬编码了 `orchestrator.py`，把
+   `rules/` 三件当镜像文件去 `docker cp` → 打印
+   `[WARN] docker cp 失败 /app/rules/...: mounted volume is marked read-only`。
+   **结果碰巧正确**（因为暂存目录恰好就是 bind 源），但**假警报会训练人忽略 WARN**；
+   哪天 bind 源换成 `/opt/pentest-config/rules`，同样的 WARN 就是**真失败**。
+   → 连上后先 `docker inspect <container> --format '{{range .Mounts}}{{.Source}}|{{.Destination}}|{{.RW}}{{println}}{{end}}'`，
+   再按**最长前缀**把 `/app/<rel>` 归到挂载点。
+
+2. ⭐ **验证必须逐文件比对 sha256**。抽象自检（模块可导入 / 函数存在 / CLI 参数存在）
+   发现不了「文件传了但没生效」——那类失败的唯一表现是「行为没变」。
+   `docker exec <容器> sha256sum <容器内路径...>` 与本地逐一比对，不一致即 FAIL。
+
+### 顺序
+
+现查挂载表 → 上传（bind 直写宿主源 / image 落暂存）→ 仅 image 做 `docker cp`
+→ `docker restart`（bind 立即生效，但**镜像内文件必须重启才对进程生效**）
+→ sha256 全量核对 → 抽象自检 → 公网可达性。
+
+⚠️ 重启会短暂中断服务；只改 bind 文件时可 `--no-restart`。
+
 ## 十七、提交记录
 
 fd24fc2 03f97bf 06f16d8 d9b908e e2afe00 ec6d98e 1b0f4e2 4d42efa 5ddf1ee 326682d 10b8f71（R013）fb04a82（strix 第 2、3 项：机器观测层 + 排除判据库）· a0dca4b（记忆分层：详情下沉 HANDBOOK、状态拆出 LEDGER）

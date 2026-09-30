@@ -22,7 +22,7 @@
 - **第二轮硬化（2026-09-29）**：多账户（`webui_users.json` + `--add-user`，token 带 user/role）、CSRF 双提交（`wbui_csrf` + `X-CSRF-Token`，写 POST 校验，登录/登出豁免）、全局限流（每 IP 滑动窗口，超限 429，`--rate-limit`/env `WEBUI_RATE_LIMIT`，0=关）、SIGTERM 优雅停机清 PID。**修掉两个 main() 崩溃**：`ROOT` 是 `str` 却用 `ROOT / "..."`（→ `os.path.join`）；`Handler._load_auth` classmethod 被同名 instance method 覆盖（→ 改名 `_configure_auth`）。回归基线 **16 套 880 断言**。
 - ⭐ **`_test_webui_lab.py` 用 `Handler.__new__` 直调 `api_*`，绕过 do_GET/do_POST 且从不执行 main()** → 「单测全绿」≠「能启动」。main() 全链路由新增 `_test_webui_startup_lab.py`（真实 subprocess 启动）兜住。
 - 回环默认无认证是**刻意的**，任何改动不得破坏 `_test_webui_lab.py`（直接 `__new__` 调 api_*，不经 do_GET/do_POST）；新增端点须保持该测试通过。
-- **服务器 Docker Hub 不可达**（2026-09-29）：`docker build` 到 `FROM python:3.13-slim` 即 `i/o timeout`（宿主访问 github 正常）→ 改代码**不能靠重建镜像生效**，须把单文件以 bind 挂进容器；`docker cp` 进容器属临时，重建即丢。规则引擎证据写在 `/app/rules_<host>.json`（**不在卷内**）→ 重建前先拷出留档（会话内的 findings 因在 `.sessions` 卷而保留）。
+- **服务器 Docker Hub 不可达**（2026-09-29）：`docker build` 到 `FROM python:3.13-slim` 即 `i/o timeout`（宿主访问 github 正常）→ 改代码**不能靠重建镜像生效**，须把单文件以 bind 挂进容器；`docker cp` 进容器属临时，重建即丢。规则引擎证据写在 `/app/rules_<host>.json`（**不在卷内**）→ 重建前先拷出留档（会话内的 findings 因在 `.sessions` 卷而保留）。**热更一律用 `deploy/sync_online.py`**（bind/image 分类**现查挂载表** + sha256 全量核对）；**bind 清单不可硬编码** —— `/app/rules`（整目录）、`/app/orchestrator.py`、`/app/fp_review.py`、`/app/tools`、`/app/auth.json`、`/app/webui_auth.json`、`/app/webui_secret.json` 都是挂载点。
 - **`submit` 提交稿模板随授权清单 `platform` 自适应**（`_submit_platform_profile`）：含「补天」→ 6 项模板（爱站权重/活动任务）；否则 → 厂商通用模板。曾写死成补天，导致漏洞盒子 YSRC 项目稿件出现不存在的必填字段（错误引导）。
 - 合规闸 `sys.exit(2)` **静默杀死请求线程**（SystemExit 不被 socketserver 捕）→ 必须 `_capture()` 兜，再从日志挑 `[BLOCK]/[FAIL]`
 - **Windows ADS**：`rules_x:port.json` 的 `:` 被 NTFS 当数据流 → 本体 0 字节但 `isfile()`/`getsize()` 全正常 → 一律 `safe_evidence_name()`
@@ -61,6 +61,7 @@
 12. **子进程输出跨编码要显式指定**：Windows 子进程 stdout 走控制台代码页（cp936），父进程 `text=True` 按 utf-8 解 `UnicodeDecodeError: 0xd7` → 子进程给 `PYTHONIOENCODING=utf-8`/`PYTHONUTF8=1`，父进程 `encoding="utf-8", errors="replace"`。
 13. **通配 DNS 下「解析成功」≠「真实资产」**：3 个根域全泛解析，108 候选全解析成功其中 66 个只是同一个兜底页 → 先用随机不存在主机名建基线排除，再按响应 sha256 折叠同款 vhost。
 14. ⭐ **汇总运行器/解析器本身也是「入口」，同样要 fail-closed**：22 套靶场的结果行有**四种风格**（`结果：N 通过 / M 失败`、`结果: N/M 通过`、`==== xx 靶场: N 通过 / M 失败 ====`、`[xx-lab] N/M 通过`），运行器只写一种正则 → **5 套全绿被报成「异常」**；若不核对基线总数会误判成代码坏了。对策：双正则取**最靠后**匹配 + 取不到仍判「异常」**绝不静默算过** + **必须核对断言总数基线**（防「测试被删掉一半」也显示全绿）。一键跑：`PYTHONUTF8=1 <envs/default python> pentest-orchestrator/_run_regress.py`。
+15. ⭐ **「传了」≠「生效」——跨主机/跨容器改文件必须 sha256 实证**：容器内哪些路径是 bind、哪些在镜像里，**必须现查**（`docker inspect --format '{{range .Mounts}}...'`），**不能硬编码**：实测 `rules/` 整目录是只读 bind，却被当镜像文件 `docker cp` → 报 `mounted volume is marked read-only`；**结果碰巧正确**（上传目标正是 bind 源目录），但**假警报会训练人忽略 WARN**，换个 bind 源它就是真失败。验证必须**逐文件比对 sha256**（这类同步最典型的失败是「传了但没生效」，只表现为「行为没变」）。
 
 ## 判据与状态语义（HANDBOOK 十一~十三）
 - **「排除项」是五种状态**（五态清单见 HANDBOOK 判据库），压成一个「排除」= 把「没拿到证据」读成「查过了没问题」

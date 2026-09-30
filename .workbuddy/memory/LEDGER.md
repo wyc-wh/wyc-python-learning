@@ -128,9 +128,11 @@ R013 栈指纹扩展（Cookie 名/资源路径/X-*头）+ WebUI 接入 fp_review
    顶层不写 level（fail-closed）；靶场 `_test_verify_location_lab.py`。
 5. **Web 端仍未接** `fp_review`（驳回风险预演）与 `credentials`（登录态）——
    规则引擎 / lint / coverage 已于 2026-09-23 接入（②卡片）
-6. **平台改动同步线上**（**阻断：需 `WB_SSH_PW`**）：工具已就绪 `pentest-orchestrator/deploy/sync_online.py`（宿主暂存 → `docker cp` → `docker restart`
-   → 4 项验证：模块可导入 / `norm_verify_key`·`find_verification` 存在 / `verify --host`
-   存在 / 公网可达；`orchestrator.py` 自动识别为 bind，只覆盖宿主那份）。`--dry-run`
-   已确认 9 个文件。⚠️ **密钥登录已被服务器移除**（`~/.ssh/id_ed25519` →
-   `Permission denied (publickey,password)`）→ 只能带口令。
+6. ~~**平台改动同步线上**~~ → **2026-09-30 晚已完成**：9 个文件（含 `rules/` 三件）
+   已同步进 `pentest-webui`，**sha256 逐文件与本地一致**、抽象自检全过、公网 200。
+   工具 `deploy/sync_online.py` 本轮改造两点：① bind/image 分类改为**现查
+   `docker inspect` 挂载表**（原来硬编码 → 把 `rules/` 当镜像文件 `docker cp` →
+   打印假 `[WARN] mounted volume is marked read-only`，结果碰巧正确但假警报
+   会训练人忽略 WARN）② 新增 **sha256 全量核对**（「传了但没生效」只表现为
+   「行为没变」，不核对发现不了）。详见 HANDBOOK 十六之二。
 7. XBEN 外部基准（只读方法学下分数会极低，但这本身把「合规代价」量化出来）
