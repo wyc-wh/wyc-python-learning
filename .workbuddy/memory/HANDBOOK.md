@@ -859,3 +859,78 @@ a6db8b0（UI 方案 D：门禁卡授权后瘦身）· f7cc1ec（UI 方案 E+F：
 2d70005（.gitignore 忽略真实目标取证产物）
 74c6f66（界面简化 A：详情卡收起 + 参数折叠 + 顶栏收敛）· 8fa7d15（补记录）
 1cace1f（UI 第三轮方案 B+C：作战概览合并卡 + 左侧阶段导航）
+
+## 十八、部署到本地 Kali（Windows → VirtualBox Kali VM）
+
+### 环境事实（2026-09-30 实测）
+| 项 | 值 |
+|---|---|
+| VM | `kali-linux-2026.2-virtualbox-amd64`（VirtualBox） |
+| 网络 | **NAT** —— `10.0.2.15` / `fd17:...` 是 NAT 特征地址；桥接会拿路由器网段。**VM 运行中改网络模式不生效，须关机改** |
+| 宿主在客机眼里 | `10.0.2.2`（NAT 下客机**可主动**访问宿主 → 零配置传文件的路子） |
+| 端口转发 | 宿主 `127.0.0.1:2222` → 客机 `:22`（网卡1→高级→端口转发） |
+| 系统 | Kali GNU/Linux Rolling / **Python 3.14.7** / OpenSSH 10.4p1 / nmap 7.99 |
+| 凭据 | `kali`/`kali`，在 sudo 组（非交互提权：`echo kali \| sudo -S cmd`） |
+| 部署点 | `/home/kali/pentest-orchestrator` + `/home/kali/CyberSecurity-Skills-master` |
+| 已有工具 | nmap / nuclei / ffuf / httpx / sqlmap / curl（Kali 自带）；**缺 subfinder** → `apt install subfinder`（2.16.0）已补 |
+
+⚠️ **手机热点场景别走桥接**：VirtualBox 桥接**无线网卡**在 WiFi 下常不工作（驱动不支持混杂模式）。
+NAT + 端口转发不受宿主用什么网络影响，且用 `127.0.0.1` 寻址，热点重启换网段也不失效。
+
+### ⭐ 三条通道（按优先级）
+1. **SSH**（首选，通用）：`ssh -p 2222 kali@127.0.0.1` → 用 `deploy/push_to_kali.py` 全自动
+2. **VirtualBox guestcontrol**（SSH 坏时的兜底；Kali 官方镜像自带 Guest Additions）：
+   ```
+   MSYS_NO_PATHCONV=1 VBoxManage guestcontrol <vm> run \
+     --exe /bin/bash --username kali --password kali -- -c '<cmd>'
+   ```
+   ⚠️ **必须 `MSYS_NO_PATHCONV=1`**：Git Bash 的 MSYS 路径转换会把参数里像路径的词
+   （`echo`、`/bin/echo`）改写成 `C:/Users/.../usr/bin/echo`，远端报
+   `No such file or directory "C:/..." on guest` —— **看起来完全像「通道不通」或「工具没装」**，
+   实际只是本地 shell 在传参前就改了。判据：**报错里出现本地路径前缀**。
+   另：guestcontrol 无法交互输密码 → 提权用 `echo kali | sudo -S cmd`。
+3. **HTTP 拉取**（零网络配置）：宿主 `python -m http.server 8000`，客机 `curl http://10.0.2.2:8000/x.tgz`
+
+### 部署器 `deploy/push_to_kali.py`
+- 打包**顶层目录**（`pentest-orchestrator` + `CyberSecurity-Skills-master`），远端解包到 `$HOME`
+- 排除：`tools/bin`（385MB Windows 二进制）/ `.sessions` / `out` / 凭据与授权清单
+- 保留：`tools/nuclei-templates`（`scanners._nuclei_templates_dir` 找的就是它）
+- 实测 **14600 文件 → 11.4MB**，上传 0.5s
+- **验证四段（缺一不可）**：
+  ① 让平台自己跑 `scanners.tool_status()` 报工具是否真被 `_which()` 认到（不是我们猜 apt 装上了）
+  ② `orchestrator.py --help` 看入口能否起来（防「模块能 import 但 CLI 起不来」）
+  ③ **技能库 `index.json` 存在**（见下方坑 2，这是最容易漏的一环）
+  ④ 12 个核心文件**逐文件 sha256** 与本地比对（「传了但没生效」只有这一步能发现）
+- `--regress` 可加跑全量 22 套靶场
+
+### 三个坑（都实际踩到）
+1. ⭐ **sshd 僵死实例 → 「22 端口在监听，但连接被 reset」**
+   `systemctl enable --now ssh` 报 `Job for ssh.service failed`（ExecStart `sshd -D` 退出码 255），
+   但 `ss -tln` 显示 22 确实在 LISTEN —— 那是 **systemd 启动失败后残留的旧 sshd 进程**占着端口，
+   新实例抢不到就退出。**判据**：Kali **内部**连自己的 22 也
+   `kex_exchange_identification: read: Connection reset by peer` → 不是防火墙、不是 NAT 转发，
+   是那个进程坏了。**修法**：`sudo systemctl stop ssh; sudo pkill -x sshd; sudo systemctl start ssh`。
+   ⚠️ 只看 `systemctl status` 会误判成「服务没配好」，其实配置一直是好的（`sshd -t` 通过、
+   host key 齐全、drop-in `override.conf` 也无害）。
+2. ⭐ **平台依赖一个「仓库之外的同级目录」**
+   `orchestrator.py:36` = `REPO = ROOT.parent / "CyberSecurity-Skills-master"`。
+   首版部署器只打包 `pentest-orchestrator/` 自身 → Kali 上 **745/1028、4 条断言失败 +
+   `_test_webui_lab` 整套异常**，而**报错全是同一句**「未找到技能库索引」。
+   补上技能库（仅 2.8MB / 248 文件）后 **1028 全绿**。
+   → 凡是「部署」，都要问：**这东西依赖哪些不在我打包范围内的路径**？
+3. **排除规则必须用通配，不能逐个列举**
+   授权清单按项目命名（`auth.dxy.json` / `auth.ezviz.json` / `auth.ikuai8.json` ...），
+   逐个写必然漏 —— 首版漏了 6 个清单，还连带 `auth_evidence_*.png` 授权证据截图一起外传。
+   改用 `EXCLUDE_GLOBS = ["auth.json", "auth.*.json", "auth_*", "auth-*", ...]`
+   + `KEEP_NAMES = {"auth.example.json"}`（模板无真实信息），并加 `--with-auth` 显式放行开关。
+
+### 为什么值得（相对 Windows）
+- Windows 便携版 nmap 无 Npcap → `-sV` 会挂起，只能退 `-sT` connect 扫描；Kali 原生 nmap
+  直接 `-sV -sC`
+- Windows 子进程输出走 cp936 → 靠 `_decode_out` 多编码回退救；Linux 上没这问题
+- 出口 IP 是 Kali 的 → 现成的「第二条出口链路」（配合 `PENTEST_PROXY` 使用）
+- 平台本体**零第三方依赖**（纯标准库），所以整个目录搬过去就能跑
+
+### 该环境下的平台表现
+**22 套 1028 断言全绿，0 失败 0 异常**（与 Windows 基线逐条一致）→ **Python 3.14.7 无兼容问题**。
+

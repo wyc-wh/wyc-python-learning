@@ -1,6 +1,7 @@
 # 项目记忆 - 雷神之锤自动挖洞平台（速查）
 
 > **详情层 `HANDBOOK.md`**：手法/规则引擎/lint/指纹/覆盖度/登录态/闭环/观测层/判据库/工程纪律/**补天SRC 十四之二**/**WebUI 十五~十五之五**/**复核记录按位置 十六**；过程 `2026-09-2x.md`，待办 `LEDGER.md`。
+> **本地 Kali 部署（环境/三通道/三坑/`push_to_kali.py`）** → **HANDBOOK 十八**。
 
 ## 骨架
 - 工程结构 / 子命令 / 合规闸 / CVSS / 工具清单 → **HANDBOOK 十四·骨架清单**
@@ -62,6 +63,27 @@
 13. **通配 DNS 下「解析成功」≠「真实资产」**：3 个根域全泛解析，108 候选全解析成功其中 66 个只是同一个兜底页 → 先用随机不存在主机名建基线排除，再按响应 sha256 折叠同款 vhost。
 14. ⭐ **汇总运行器/解析器本身也是「入口」，同样要 fail-closed**：22 套靶场的结果行有**四种风格**（`结果：N 通过 / M 失败`、`结果: N/M 通过`、`==== xx 靶场: N 通过 / M 失败 ====`、`[xx-lab] N/M 通过`），运行器只写一种正则 → **5 套全绿被报成「异常」**；若不核对基线总数会误判成代码坏了。对策：双正则取**最靠后**匹配 + 取不到仍判「异常」**绝不静默算过** + **必须核对断言总数基线**（防「测试被删掉一半」也显示全绿）。一键跑：`PYTHONUTF8=1 <envs/default python> pentest-orchestrator/_run_regress.py`。
 15. ⭐ **「传了」≠「生效」——跨主机/跨容器改文件必须 sha256 实证**：容器内哪些路径是 bind、哪些在镜像里，**必须现查**（`docker inspect --format '{{range .Mounts}}...'`），**不能硬编码**：实测 `rules/` 整目录是只读 bind，却被当镜像文件 `docker cp` → 报 `mounted volume is marked read-only`；**结果碰巧正确**（上传目标正是 bind 源目录），但**假警报会训练人忽略 WARN**，换个 bind 源它就是真失败。验证必须**逐文件比对 sha256**（这类同步最典型的失败是「传了但没生效」，只表现为「行为没变」）。
+
+16. ⭐ **「通道不通」与「参数被本地 shell 改写」要分清**：Git Bash 有 MSYS 路径转换，
+    跨 shell 调外部工具时参数里像路径的词会被改写成 `C:/Users/.../Git/usr/bin/xxx`，
+    远端报 `No such file or directory "C:/..." on guest` —— **看起来完全像「通道不通/工具没装」**，
+    实际是本地 shell 在传参前就改了。一律 `MSYS_NO_PATHCONV=1` 打头；判据是**报错里出现本地路径前缀**。
+17. ⭐ **部署器必须显式列出所有顶层依赖，并逐个断言落地**：平台的依赖可能**在仓库之外**
+    （`orchestrator.py:36 REPO = ROOT.parent / "CyberSecurity-Skills-master"`）。只打包「项目目录」
+    → 目标机上表现为**部分靶场失败 + 整套异常，而报错全是同一句话**，极易误判成「代码有问题」。
+    凡「部署」都要问：**这东西还依赖哪些不在我打包范围内的路径**？
+
+
+## 本地 Kali（VirtualBox VM，2026-09-30 部署完成）
+- **NAT 模式**（`10.0.2.15`，**不是**桥接；桥接无线网卡在手机热点下常不工作）；宿主在客机眼里 = `10.0.2.2`；端口转发 `127.0.0.1:2222 → :22`
+- Kali 2026.2 / **Python 3.14.7** / nmap 7.99；`kali`/`kali`（sudo 组，非交互用 `echo kali | sudo -S`）；平台在 `/home/kali/pentest-orchestrator`，技能库 `/home/kali/CyberSecurity-Skills-master`
+- 部署：`deploy/push_to_kali.py --host 127.0.0.1 --port 2222 --password kali [--regress]`（打顶层双目录、四段实证）
+- **SSH 坏时的兜底通道 = VirtualBox guestcontrol**（Kali 官方镜像自带 Guest Additions）：
+  `MSYS_NO_PATHCONV=1 VBoxManage guestcontrol <vm> run --exe /bin/bash --username kali --password kali -- -c '<cmd>'`
+  ⚠️ 漏 `MSYS_NO_PATHCONV=1` → Git Bash 把 `echo` 等词改写成 `C:/.../usr/bin/echo`，报错**像「通道不通」其实只是参数被改写**
+- ⚠️ **「22 在监听但连接被 reset」= sshd 僵死残留进程占端口**（systemd 启失败的旧实例）→ `systemctl stop ssh; sudo pkill -x sshd; systemctl start ssh`。只看 status 会误判成「没配好」
+- ⚠️ **平台依赖仓库外的同级目录** `CyberSecurity-Skills-master`（`orchestrator.py:36 ROOT.parent`）→ 部署必带，否则 4 条失败 + webui 整套异常且报错只有一句
+- 结果：Kali 上 **22 套 1028 断言全绿**（与 Windows 基线逐条一致）→ Python 3.14 无兼容问题
 
 ## 判据与状态语义（HANDBOOK 十一~十三）
 - **「排除项」是五种状态**（五态清单见 HANDBOOK 判据库），压成一个「排除」= 把「没拿到证据」读成「查过了没问题」
