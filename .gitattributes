@@ -1,0 +1,8 @@
+# Shell 脚本必须在 Linux 上以 LF 运行：Windows 的 core.autocrlf=true 会把
+# 签出文件转成 CRLF，导致 `sh xxx.sh` 报 "bad interpreter" / `^M` 语法错误。
+# 部署脚本是在服务器宿主（Linux）直接执行的，故强制 LF。
+*.sh text eol=lf
+
+# 批处理是 Windows 侧启动器，反过来必须 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
