@@ -110,6 +110,49 @@ R013 栈指纹扩展（Cookie 名/资源路径/X-*头）+ WebUI 接入 fp_review
 - 本轮顺带修掉 4 个平台缺陷：R001 CSP 假阳性 / R001 证据被 `val[:80]` 截断（**尾部被伪造成
   疑似非法 token**）/ R009 缺 counterevidence（违反 D-01）/ WAF 特征库补 2 条（122→124）
 
+## VULBOX-LENOVO（漏洞盒子 / 联想集团 LSRC，2026-09-30 ~ 10-01）
+
+> 与上面「补天联想 SRC」是**同一厂商、不同平台**。授权清单已从补天版改写为漏洞盒子版。
+
+- 授权编号 `VULBOX-LENOVO`；平台 `漏洞盒子 / Vulbox`（`https://lsrc.vulbox.com/`）
+- 范围与 2026-09-28 截图**逐条一致**：9 通配域（`lenovo.com` / `lenovo.com.cn` /
+  `lenovomm.com` / `lenovo.cn` / `lenovo.net` / `motorola.com` / `motorola.com.cn` /
+  `baiying.cn` / `baiying.com.cn`，各含 `*.`）= 18 清单项
+- 新增红线：**禁上传 webshell**（一经查实冻结奖金+拉黑）；项目级别 **P0=已申明域 /
+  P1=未申明域**（用未申明域名提交 → P1）；评分依据《联想漏洞评分和奖励标准 V6.0》
+- 会话 `VULBOX-LENOVO-20260930-230622`；资产 2482 候选（crt.sh 502 + wayback 超时，
+  靠 subfinder）→ DNS 筛选 **270 存活**（9 个根域全 NXDOMAIN，无泛解析）→ 精选 **50 台**跑规则引擎
+- **发现 5 条，可提交 3 条（全部 confirmed）**：
+
+  | 主机 | 规则 | 分数 | 结论 |
+  |---|---|---|---|
+  | `mail.baiying.com.cn` | R003 | 6.8 / 6.4 | ✅ 明文 http 200 + **无 Location 不跳转** + 19 个 Set-Cookie 中 15 个会话类缺 Secure |
+  | `cn.sso.lenovo.com` | R005 | 5.6 / 5.9 | ✅ Tomcat 8.5.57（8.5.x 分支 2024-03-31 EOL），默认 404 页正文泄露版本，CF 透传 |
+  | `account.lenovo.com` | R001 | 3.1 / 2.6 | ✅ `x-content-type-options: nosniffnosniff`（301 与 200 均出现） |
+  | `monitor.cochat.lenovo.com` | R009 | 5.3 | ❌ 仅指纹，D-01 不提交 |
+  | `shop-pub-gateway.baiying.com.cn` | R003 | 4.2 | ❌ 明文可达但无会话 Cookie，174B 空壳，detected 不进稿 |
+
+- 产物：`out/VULBOX-LENOVO-全链路报告.md` / `-提交稿.md` / `-覆盖度.json` / `-待跟进.json`
+  （待跟进 216 条：R008×74、R010×50、R011×50、R013×42）
+- 归属证明（实测页面原文，可机器核对）：联想中国官网页脚「版权所有：1998-2026 联想集团」
+  + **京ICP备11035381-2**；`www.baiying.com.cn` **同一备案号** → 坐实 `*.baiying.com.cn` 归属
+- **本轮修掉 4 个平台缺陷（全部由我自己的前序修复暴露）**：
+  1. R014 把 reCAPTCHA **site key** 当凭据报 5.3 —— 但 site key 与 **secret key 同形**
+     （都是 40 位 `6L…`，Google 官方口径）→ 整类打 `public` 是**失败方向不安全**
+     （真泄的 secret key 会被静默吞掉）。改为 `ambiguous:true` + 按命中上下文判定
+  2. R014 上下文覆盖不足：站点用 **JS 配置对象**（`GOOGLE_RECAPTCHA:{PROD_V2:"6L…"}`）
+     而非 `grecaptcha(`/`data-sitekey` → 补上下文正则；
+  3. R014 被 **base64 内联 SVG** 随机字符流命中（页面 `recaptcha` 出现 0 次）→
+     新增「取值必须独立（分隔/粘连判定）」通用过滤，**任何特征正则都可能踩这个坑**；
+  4. R001 缺 counterevidence（EL034）。
+  附带修：`_build_p1_data.py` 生成器未同步（补丁会被 rebuild 静默冲掉）→ 加往返证明；
+  靶场夹具 `_SITEKEY` 实际 49 字符（注释写 40）→ 修为恰好 40。
+- 工程失误自纠：曾把 `--interval` 调成 3s 压缩耗时 → 被自己的 `lint` 判 `EL021` 阻断
+  （「间隔是合规特性不是性能问题，不得调小」）→ 证据作废，**全量 50 台按 6s 重跑**
+- 长跑 runner 首版**单台 `TimeoutExpired` 直接杀掉整轮**（跑 7.5h 挂在第 26 台）→
+  改为超时不再致命 + 按 checklog 续跑；`www.motorola.com.cn` 复跑 57.7s 正常 → **偶发挂死**
+- 回归：**22 套 1049 通过 / 0 失败 / 0 异常**（p1 87 → 101）
+
 ## 待办（优先级降序）
 
 0. ~~平台完善清单~~ → **2026-09-26 晚全部代码项完成**（P0×4 根因 + receipt/merge-rule/SARIF/
