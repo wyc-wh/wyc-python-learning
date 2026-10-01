@@ -958,6 +958,9 @@ a6db8b0（UI 方案 D：门禁卡授权后瘦身）· f7cc1ec（UI 方案 E+F：
 2d70005（.gitignore 忽略真实目标取证产物）
 74c6f66（界面简化 A：详情卡收起 + 参数折叠 + 顶栏收敛）· 8fa7d15（补记录）
 1cace1f（UI 第三轮方案 B+C：作战概览合并卡 + 左侧阶段导航）
+98f6c19（**VULBOX-LENOVO 全链路 + R014 四层误报修复**：授权清单改漏洞盒子版 / 50 台 6s 合规重跑 /
+　R014 公开标识分层→ambiguous 上下文判定→base64 内联值独立过滤 / 生成器往返证明 /
+　回归 22 套 1049）· 53b2295（部署到本地 Kali）· 32c7a88（push_to_kali.py）
 
 ## 十八、部署到本地 Kali（Windows → VirtualBox Kali VM）
 
